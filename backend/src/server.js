@@ -18,6 +18,22 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+const truthy = (value) => ["1", "true", "yes", "y", "on"].includes(String(value || "").toLowerCase());
+
+let mongoMemoryServer = null;
+const resolveMongoUri = async () => {
+  if (process.env.MONGODB_URI) return process.env.MONGODB_URI;
+  if (process.env.NODE_ENV === "production" || !truthy(process.env.USE_IN_MEMORY_DB)) {
+    throw new Error(
+      "MONGODB_URI is missing in environment variables (set USE_IN_MEMORY_DB=true for local dev)"
+    );
+  }
+
+  const { MongoMemoryServer } = require("mongodb-memory-server");
+  mongoMemoryServer = await MongoMemoryServer.create();
+  return mongoMemoryServer.getUri("website_db");
+};
+
 const allowedOrigins = (process.env.FRONTEND_URL || "")
   .split(",")
   .map((item) => item.trim())
@@ -454,10 +470,8 @@ app.get("/api/admin/users/template", authRequired, roleRequired("admin"), async 
 
 const start = async () => {
   try {
-    if (!process.env.MONGODB_URI) {
-      throw new Error("MONGODB_URI is missing in environment variables");
-    }
-    await mongoose.connect(process.env.MONGODB_URI);
+    const mongoUri = await resolveMongoUri();
+    await mongoose.connect(mongoUri);
 
     // Seed initial admin if none exists.
     const adminCount = await User.countDocuments({ role: "admin" });
@@ -469,9 +483,54 @@ const start = async () => {
       console.log(`Seeded admin user: ${email}`);
     }
 
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
       console.log(`Backend listening on port ${PORT}`);
+
+      if (truthy(process.env.SMOKE_TEST)) {
+        const http = require("http");
+        const url = `http://localhost:${PORT}/api/health`;
+        const req = http.get(url, (resp) => {
+          let data = "";
+          resp.setEncoding("utf8");
+          resp.on("data", (chunk) => {
+            data += chunk;
+          });
+          resp.on("end", async () => {
+            console.log(`SMOKE_TEST /api/health -> ${resp.statusCode} ${data}`);
+            server.close(async () => {
+              try {
+                await mongoose.disconnect();
+              } catch {}
+              try {
+                if (mongoMemoryServer) await mongoMemoryServer.stop();
+              } catch {}
+              process.exit(resp.statusCode === 200 ? 0 : 1);
+            });
+          });
+        });
+
+        req.on("error", (err) => {
+          console.error("SMOKE_TEST failed:", err.message);
+          process.exit(1);
+        });
+        req.setTimeout(10_000, () => {
+          console.error("SMOKE_TEST timed out");
+          process.exit(1);
+        });
+      }
     });
+
+    const shutdown = async () => {
+      try {
+        await mongoose.disconnect();
+      } catch {}
+      try {
+        if (mongoMemoryServer) await mongoMemoryServer.stop();
+      } catch {}
+      process.exit(0);
+    };
+    process.on("SIGINT", shutdown);
+    process.on("SIGTERM", shutdown);
   } catch (error) {
     console.error("Server startup failed:", error.message);
     process.exit(1);

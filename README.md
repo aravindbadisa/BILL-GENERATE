@@ -65,6 +65,7 @@ Set `backend/.env`:
 ```env
 PORT=5000
 MONGODB_URI=mongodb+srv://username:password@cluster-url/website_db?retryWrites=true&w=majority
+USE_IN_MEMORY_DB=false
 FRONTEND_URL=http://localhost:5173,https://your-site.netlify.app
 JWT_SECRET=change_this_to_a_long_random_secret
 ADMIN_EMAIL=admin@example.com
