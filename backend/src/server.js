@@ -5,6 +5,8 @@ const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 const multer = require("multer");
 const XLSX = require("xlsx");
+const fs = require("fs");
+const path = require("path");
 const { signToken, authRequired, roleRequired, anyRoleRequired } = require("./auth");
 const User = require("./models/User");
 const Student = require("./models/Student");
@@ -30,7 +32,15 @@ const resolveMongoUri = async () => {
   }
 
   const { MongoMemoryServer } = require("mongodb-memory-server");
-  mongoMemoryServer = await MongoMemoryServer.create();
+  const defaultDbPath = path.join(process.cwd(), ".data", "mongo");
+  const dbPath = String(process.env.IN_MEMORY_DB_PATH || defaultDbPath).trim();
+  fs.mkdirSync(dbPath, { recursive: true });
+
+  mongoMemoryServer = await MongoMemoryServer.create({
+    instance: {
+      dbPath
+    }
+  });
   return mongoMemoryServer.getUri("website_db");
 };
 
