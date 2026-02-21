@@ -20,6 +20,16 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+const USER_ROLES = ["admin", "principal", "accountant", "staff"];
+const BILLING_ROLES = ["admin", "principal", "accountant", "staff"];
+
+const normalizeRole = (roleRaw) => {
+  const role = String(roleRaw || "").toLowerCase().trim();
+  if (role === "prncipal" || role === "pricipal") return "principal";
+  if (role === "accountent") return "accountant";
+  return role;
+};
+
 const truthy = (value) => ["1", "true", "yes", "y", "on"].includes(String(value || "").toLowerCase());
 
 let mongoMemoryServer = null;
@@ -144,7 +154,7 @@ app.get("/api/auth/me", authRequired, async (req, res) => {
 });
 
 // Billing routes: only logged-in staff/admin can create/update data.
-app.post("/api/students", authRequired, anyRoleRequired(["admin", "staff"]), async (req, res) => {
+app.post("/api/students", authRequired, anyRoleRequired(BILLING_ROLES), async (req, res) => {
   try {
     const { pin, name, course, collegeTotalFee } = req.body;
     if (!pin || !name || !course || collegeTotalFee === undefined) {
@@ -162,7 +172,7 @@ app.post("/api/students", authRequired, anyRoleRequired(["admin", "staff"]), asy
   }
 });
 
-app.get("/api/students", authRequired, anyRoleRequired(["admin", "staff"]), async (req, res) => {
+app.get("/api/students", authRequired, anyRoleRequired(BILLING_ROLES), async (req, res) => {
   try {
     const students = await Student.find().sort({ createdAt: -1 });
     res.json(students);
@@ -174,7 +184,7 @@ app.get("/api/students", authRequired, anyRoleRequired(["admin", "staff"]), asyn
 app.post(
   "/api/college-payments",
   authRequired,
-  anyRoleRequired(["admin", "staff"]),
+  anyRoleRequired(BILLING_ROLES),
   async (req, res) => {
   try {
     const { date, pin, amountPaid } = req.body;
@@ -197,7 +207,7 @@ app.post(
   }
 );
 
-app.post("/api/hostel-fees", authRequired, anyRoleRequired(["admin", "staff"]), async (req, res) => {
+app.post("/api/hostel-fees", authRequired, anyRoleRequired(BILLING_ROLES), async (req, res) => {
   try {
     const { month, monthlyFee } = req.body;
     if (!month || monthlyFee === undefined) {
@@ -215,7 +225,7 @@ app.post("/api/hostel-fees", authRequired, anyRoleRequired(["admin", "staff"]), 
   }
 });
 
-app.get("/api/hostel-fees", authRequired, anyRoleRequired(["admin", "staff"]), async (req, res) => {
+app.get("/api/hostel-fees", authRequired, anyRoleRequired(BILLING_ROLES), async (req, res) => {
   try {
     const data = await HostelFeeMaster.find().sort({ month: 1 });
     res.json(data);
@@ -227,7 +237,7 @@ app.get("/api/hostel-fees", authRequired, anyRoleRequired(["admin", "staff"]), a
 app.post(
   "/api/hostel-attendance",
   authRequired,
-  anyRoleRequired(["admin", "staff"]),
+  anyRoleRequired(BILLING_ROLES),
   async (req, res) => {
   try {
     const { pin, month, totalDays, daysStayed } = req.body;
@@ -263,7 +273,7 @@ app.post(
 app.post(
   "/api/hostel-payments",
   authRequired,
-  anyRoleRequired(["admin", "staff"]),
+  anyRoleRequired(BILLING_ROLES),
   async (req, res) => {
   try {
     const { date, pin, month, amountPaid } = req.body;
@@ -290,7 +300,7 @@ app.post(
 app.get(
   "/api/dashboard/students",
   authRequired,
-  anyRoleRequired(["admin", "staff"]),
+  anyRoleRequired(BILLING_ROLES),
   async (req, res) => {
   try {
     const students = await Student.find().sort({ createdAt: -1 });
@@ -302,7 +312,7 @@ app.get(
   }
 );
 
-app.get("/api/receipt/:pin", authRequired, anyRoleRequired(["admin", "staff"]), async (req, res) => {
+app.get("/api/receipt/:pin", authRequired, anyRoleRequired(BILLING_ROLES), async (req, res) => {
   try {
     const data = await computeStudentBalances(req.params.pin);
     if (!data) return res.status(404).json({ message: "Student not found" });
@@ -332,14 +342,23 @@ app.post("/api/admin/users", authRequired, roleRequired("admin"), async (req, re
     if (!email || !name || !role || !password) {
       return res.status(400).json({ message: "email, name, role, password are required" });
     }
-    if (!["admin", "staff"].includes(role)) {
-      return res.status(400).json({ message: "role must be admin or staff" });
+    const finalRole = normalizeRole(role);
+    if (!USER_ROLES.includes(finalRole)) {
+      return res
+        .status(400)
+        .json({ message: "role must be admin, principal, accountant, or staff" });
     }
 
     const passwordHash = await bcrypt.hash(String(password), 10);
     const user = await User.findOneAndUpdate(
       { email: String(email).toLowerCase().trim() },
-      { email: String(email).toLowerCase().trim(), name: String(name).trim(), role, passwordHash, active: active !== false },
+      {
+        email: String(email).toLowerCase().trim(),
+        name: String(name).trim(),
+        role: finalRole,
+        passwordHash,
+        active: active !== false
+      },
       { upsert: true, new: true, runValidators: true }
     );
     res.status(201).json(sanitizeUser(user));
@@ -427,16 +446,19 @@ app.post(
         const row = rows[i] || {};
         const rowEmail = String(row.email || row.Email || "").toLowerCase().trim();
         const rowName = String(row.name || row.Name || "").trim();
-        const rowRole = String(row.role || row.Role || "").toLowerCase().trim();
+        const rowRoleRaw = String(row.role || row.Role || "").toLowerCase().trim();
         const rowPassword = String(row.password || row.Password || "").trim();
         const rowActiveRaw = String(row.active || row.Active || "").trim();
 
-        if (!rowEmail || !rowName || !rowRole || !rowPassword) {
+        if (!rowEmail || !rowName || !rowRoleRaw || !rowPassword) {
           errors.push({ row: i + 2, message: "Missing required fields (email,name,role,password)" });
           continue;
         }
-        if (!["admin", "staff"].includes(rowRole)) {
-          errors.push({ row: i + 2, message: "Invalid role (admin/staff)" });
+
+        const finalRole = normalizeRole(rowRoleRaw);
+
+        if (!USER_ROLES.includes(finalRole)) {
+          errors.push({ row: i + 2, message: "Invalid role (admin/principal/accountant/staff)" });
           continue;
         }
 
@@ -449,7 +471,7 @@ app.post(
         const existing = await User.findOne({ email: rowEmail });
         const user = await User.findOneAndUpdate(
           { email: rowEmail },
-          { email: rowEmail, name: rowName, role: rowRole, passwordHash, active },
+          { email: rowEmail, name: rowName, role: finalRole, passwordHash, active },
           { upsert: true, new: true, runValidators: true }
         );
 
@@ -471,6 +493,8 @@ app.get("/api/admin/users/template", authRequired, roleRequired("admin"), async 
     res.send(
       "email,name,role,password,active\n" +
         "staff1@example.com,Staff One,staff,ChangeMe123!,true\n" +
+        "accountant1@example.com,Accountant One,accountant,ChangeMe123!,true\n" +
+        "principal1@example.com,Principal One,principal,ChangeMe123!,true\n" +
         "admin2@example.com,Second Admin,admin,ChangeMe123!,true\n"
     );
   } catch (error) {

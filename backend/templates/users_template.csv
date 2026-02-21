@@ -1,4 +1,5 @@
 email,name,role,password,active
 staff1@example.com,Staff One,staff,ChangeMe123!,true
-staff2@example.com,Staff Two,staff,ChangeMe123!,true
+accountant1@example.com,Accountant One,accountant,ChangeMe123!,true
+principal1@example.com,Principal One,principal,ChangeMe123!,true
 admin2@example.com,Second Admin,admin,ChangeMe123!,true

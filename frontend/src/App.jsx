@@ -290,6 +290,8 @@ export default function App() {
               <input name="name" placeholder="Name" value={createUserForm.name} onChange={handleInput(setCreateUserForm)} required />
               <select name="role" value={createUserForm.role} onChange={handleInput(setCreateUserForm)}>
                 <option value="staff">staff</option>
+                <option value="accountant">accountant</option>
+                <option value="principal">principal</option>
                 <option value="admin">admin</option>
               </select>
               <input name="password" type="password" placeholder="Password" value={createUserForm.password} onChange={handleInput(setCreateUserForm)} required />
@@ -317,7 +319,7 @@ export default function App() {
               <button type="submit">Upload & Import</button>
             </form>
             <p className="hint">
-              Columns required: `email,name,role,password` (optional `active`). Role must be `admin` or `staff`.
+              Columns required: `email,name,role,password` (optional `active`). Role must be `admin`, `principal`, `accountant`, or `staff`.
             </p>
           </div>
         </section>

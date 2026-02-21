@@ -25,6 +25,8 @@ Based on workbook `College_Fee_System_fixed_v2.xlsm`:
 - Roles:
   - `admin`: can create/import users
   - `staff`: can enter students/payments/attendance
+  - `principal`: can enter students/payments/attendance
+  - `accountant`: can enter students/payments/attendance
 
 ## API endpoints
 
