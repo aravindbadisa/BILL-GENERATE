@@ -97,17 +97,18 @@ Open `http://localhost:5173`.
 
 ## Admin user import (Excel)
 
-Admin can upload an Excel file (`.xlsx`) or CSV (`.csv`) to create staff/admin users.
+Admin can upload an Excel file (`.xlsx`) or CSV (`.csv`) to create users.
 
 Template columns:
+- `collegeKey` (required; use college code like `008`)
 - `email` (required)
 - `name` (required)
-- `role` (required: `admin` or `staff`)
+- `role` (required: `admin`, `principal`, `accountant`, or `staff`)
 - `password` (required)
 - `active` (optional: `true/false`, default `true`)
 
 Template file in repo:
-- `website/backend/templates/users_template.csv`
+- `backend/templates/users_template.csv`
 
 ## Deploy
 

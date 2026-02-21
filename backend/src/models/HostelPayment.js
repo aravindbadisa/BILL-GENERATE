@@ -5,7 +5,8 @@ const hostelPaymentSchema = new mongoose.Schema(
     date: { type: Date, required: true },
     pin: { type: String, required: true, trim: true, index: true },
     month: { type: String, required: true, trim: true },
-    amountPaid: { type: Number, required: true, min: 1 }
+    amountPaid: { type: Number, required: true, min: 1 },
+    phone: { type: String, trim: true, default: "" }
   },
   { timestamps: true }
 );

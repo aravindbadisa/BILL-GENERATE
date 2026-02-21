@@ -3,13 +3,20 @@ import { useEffect, useState } from "react";
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000";
 const TOKEN_KEY = "billing_token";
 
-const initialStudent = { pin: "", name: "", course: "", collegeTotalFee: "" };
-const initialCollegePayment = { date: "", pin: "", amountPaid: "" };
+const initialStudent = { pin: "", name: "", course: "", phone: "", collegeTotalFee: "" };
+const initialCollegePayment = { date: "", pin: "", amountPaid: "", phone: "" };
 const initialHostelFee = { month: "", monthlyFee: "" };
 const initialAttendance = { pin: "", month: "", totalDays: "", daysStayed: "" };
-const initialHostelPayment = { date: "", pin: "", month: "", amountPaid: "" };
+const initialHostelPayment = { date: "", pin: "", month: "", amountPaid: "", phone: "" };
 const initialLogin = { email: "", password: "" };
-const initialCreateUser = { email: "", name: "", role: "staff", password: "", active: "true" };
+const initialCreateUser = {
+  collegeKey: "default",
+  email: "",
+  name: "",
+  role: "staff",
+  password: "",
+  active: "true"
+};
 
 export default function App() {
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || "");
@@ -28,6 +35,7 @@ export default function App() {
   const [hostelPaymentForm, setHostelPaymentForm] = useState(initialHostelPayment);
   const [receiptPin, setReceiptPin] = useState("");
   const [receiptData, setReceiptData] = useState(null);
+  const [receiptPhone, setReceiptPhone] = useState("");
 
   const callApi = async (path, method = "GET", body = null) => {
     const headers = {};
@@ -111,9 +119,63 @@ export default function App() {
     try {
       const data = await callApi(`/api/receipt/${receiptPin}`);
       setReceiptData(data);
+      setReceiptPhone(data.phone || "");
     } catch (e) {
       setError(e.message);
     }
+  };
+
+  const downloadReceiptPdf = async (kind = "auto") => {
+    setMessage("");
+    setError("");
+    try {
+      if (!receiptPin) throw new Error("Enter PIN");
+      const headers = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const qs = kind && kind !== "auto" ? `?kind=${encodeURIComponent(kind)}` : "";
+      const res = await fetch(`${API_BASE}/api/receipt/${encodeURIComponent(receiptPin)}/pdf${qs}`, {
+        headers
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.message || "Failed to download PDF");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${kind === "balance" ? "balance_due" : "receipt"}_${receiptPin}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setMessage("PDF downloaded.");
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const canWhatsApp = ["principal", "admin"].includes(me?.role);
+  const openWhatsApp = () => {
+    setMessage("");
+    setError("");
+    if (!receiptData) {
+      setError("Fetch receipt data first");
+      return;
+    }
+    const raw = String(receiptPhone || "").trim();
+    const phoneDigits = raw.replace(/[^\d]/g, "");
+    if (!phoneDigits) {
+      setError("Enter phone number (include country code if needed)");
+      return;
+    }
+    const totalDue = Number(receiptData.collegeBalance || 0) + Number(receiptData.hostelBalance || 0);
+    const text =
+      totalDue > 0
+        ? `Hello ${receiptData.name}, your remaining balance is College: ${receiptData.collegeBalance}, Hostel: ${receiptData.hostelBalance}, Total: ${totalDue}. Please pay the remaining amount.`
+        : `Hello ${receiptData.name}, your receipt summary: College paid ${receiptData.collegePaid} / ${receiptData.collegeTotalFee}. Hostel balance ${receiptData.hostelBalance}.`;
+    const url = `https://wa.me/${phoneDigits}?text=${encodeURIComponent(text)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
   };
 
   const login = async (e) => {
@@ -145,6 +207,7 @@ export default function App() {
   const [users, setUsers] = useState([]);
   const [createUserForm, setCreateUserForm] = useState(initialCreateUser);
   const [importFile, setImportFile] = useState(null);
+  const [colleges, setColleges] = useState([]);
 
   const isAdmin = me?.role === "admin";
 
@@ -162,12 +225,27 @@ export default function App() {
     if (isAdmin) loadUsers();
   }, [isAdmin]);
 
+  const loadColleges = async () => {
+    if (!isAdmin) return;
+    try {
+      const data = await callApi("/api/admin/colleges");
+      setColleges(data);
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  useEffect(() => {
+    if (isAdmin) loadColleges();
+  }, [isAdmin]);
+
   const createUser = async (e) => {
     e.preventDefault();
     setMessage("");
     setError("");
     try {
       const payload = {
+        collegeKey: createUserForm.collegeKey,
         email: createUserForm.email,
         name: createUserForm.name,
         role: createUserForm.role,
@@ -177,7 +255,7 @@ export default function App() {
       await callApi("/api/admin/users", "POST", payload);
       setMessage("User saved.");
       setCreateUserForm(initialCreateUser);
-      await loadUsers();
+      await Promise.all([loadUsers(), loadColleges()]);
     } catch (e2) {
       setError(e2.message);
     }
@@ -195,9 +273,21 @@ export default function App() {
         setError(`Some rows failed. First error: row ${result.errors[0].row}: ${result.errors[0].message}`);
       }
       setImportFile(null);
-      await loadUsers();
+      await Promise.all([loadUsers(), loadColleges()]);
     } catch (e2) {
       setError(e2.message);
+    }
+  };
+
+  const setCollegeActive = async (collegeKey, active) => {
+    setMessage("");
+    setError("");
+    try {
+      await callApi("/api/admin/colleges/active", "POST", { collegeKey, active });
+      setMessage(`${active ? "Enabled" : "Disabled"} college: ${collegeKey}`);
+      await loadColleges();
+    } catch (e) {
+      setError(e.message);
     }
   };
 
@@ -286,6 +376,13 @@ export default function App() {
           <div>
             <h2>Admin: Create User</h2>
             <form onSubmit={createUser}>
+              <input
+                name="collegeKey"
+                placeholder="College Code (e.g. 008)"
+                value={createUserForm.collegeKey}
+                onChange={handleInput(setCreateUserForm)}
+                required
+              />
               <input name="email" type="email" placeholder="Email" value={createUserForm.email} onChange={handleInput(setCreateUserForm)} required />
               <input name="name" placeholder="Name" value={createUserForm.name} onChange={handleInput(setCreateUserForm)} required />
               <select name="role" value={createUserForm.role} onChange={handleInput(setCreateUserForm)}>
@@ -319,9 +416,61 @@ export default function App() {
               <button type="submit">Upload & Import</button>
             </form>
             <p className="hint">
-              Columns required: `email,name,role,password` (optional `active`). Role must be `admin`, `principal`, `accountant`, or `staff`.
+              Columns required: `collegeKey,email,name,role,password` (optional `active`). Role must be `admin`, `principal`, `accountant`, or `staff`.
             </p>
           </div>
+        </section>
+      )}
+
+      {isAdmin && (
+        <section className="card">
+          <h2>Admin: Colleges (1-click login access)</h2>
+          {colleges.length === 0 ? (
+            <p>No colleges yet.</p>
+          ) : (
+            <div className="tableWrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>College Code</th>
+                    <th>Enabled</th>
+                    <th>Active users</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {colleges.map((c) => (
+                    <tr key={c.collegeKey}>
+                      <td>{c.collegeKey}</td>
+                      <td>{String(c.enabled)}</td>
+                      <td>
+                        {c.activeNonAdmin}/{c.totalNonAdmin} (non-admin)
+                      </td>
+                      <td>
+                        {c.enabled ? (
+                          <button
+                            type="button"
+                            className="secondary"
+                            onClick={() => setCollegeActive(c.collegeKey, false)}
+                          >
+                            Disable
+                          </button>
+                        ) : (
+                          <button type="button" onClick={() => setCollegeActive(c.collegeKey, true)}>
+                            Enable
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <p className="hint">
+            Disable sets all non-admin users in that college to inactive (they cannot login). Enable sets them back to
+            active.
+          </p>
         </section>
       )}
 
@@ -335,6 +484,7 @@ export default function App() {
               <table>
                 <thead>
                   <tr>
+                    <th>College</th>
                     <th>Email</th>
                     <th>Name</th>
                     <th>Role</th>
@@ -344,6 +494,7 @@ export default function App() {
                 <tbody>
                   {users.map((u) => (
                     <tr key={u.id}>
+                      <td>{u.collegeKey || "default"}</td>
                       <td>{u.email}</td>
                       <td>{u.name}</td>
                       <td>{u.role}</td>
@@ -357,7 +508,9 @@ export default function App() {
         </section>
       )}
 
-      <section className="card grid">
+      {!isAdmin && (
+        <>
+        <section className="card grid">
         <div>
           <h2>Student Master</h2>
           <form
@@ -369,6 +522,7 @@ export default function App() {
             <input name="pin" placeholder="PIN" value={studentForm.pin} onChange={handleInput(setStudentForm)} required />
             <input name="name" placeholder="Name" value={studentForm.name} onChange={handleInput(setStudentForm)} required />
             <input name="course" placeholder="Course" value={studentForm.course} onChange={handleInput(setStudentForm)} required />
+            <input name="phone" placeholder="Phone (optional)" value={studentForm.phone} onChange={handleInput(setStudentForm)} />
             <input
               name="collegeTotalFee"
               type="number"
@@ -394,6 +548,7 @@ export default function App() {
           >
             <input name="date" type="date" value={collegePaymentForm.date} onChange={handleInput(setCollegePaymentForm)} required />
             <input name="pin" placeholder="PIN" value={collegePaymentForm.pin} onChange={handleInput(setCollegePaymentForm)} required />
+            <input name="phone" placeholder="Phone (optional)" value={collegePaymentForm.phone} onChange={handleInput(setCollegePaymentForm)} />
             <input
               name="amountPaid"
               type="number"
@@ -478,6 +633,7 @@ export default function App() {
             <input name="date" type="date" value={hostelPaymentForm.date} onChange={handleInput(setHostelPaymentForm)} required />
             <input name="pin" placeholder="PIN" value={hostelPaymentForm.pin} onChange={handleInput(setHostelPaymentForm)} required />
             <input name="month" placeholder="Month" value={hostelPaymentForm.month} onChange={handleInput(setHostelPaymentForm)} required />
+            <input name="phone" placeholder="Phone (optional)" value={hostelPaymentForm.phone} onChange={handleInput(setHostelPaymentForm)} />
             <input
               name="amountPaid"
               type="number"
@@ -497,14 +653,33 @@ export default function App() {
             <input value={receiptPin} onChange={(e) => setReceiptPin(e.target.value)} placeholder="Enter PIN" />
             <button type="button" onClick={fetchReceipt}>Get Receipt Data</button>
           </div>
+          <div className="inline" style={{ marginTop: 8 }}>
+            <input
+              value={receiptPhone}
+              onChange={(e) => setReceiptPhone(e.target.value)}
+              placeholder="WhatsApp phone (optional)"
+            />
+            <button type="button" className="secondary" onClick={() => downloadReceiptPdf("auto")}>
+              Download PDF
+            </button>
+            {canWhatsApp && (
+              <button type="button" onClick={openWhatsApp}>
+                WhatsApp Message
+              </button>
+            )}
+          </div>
           {receiptData && (
             <div className="receipt">
               <p><strong>Name:</strong> {receiptData.name}</p>
               <p><strong>Course:</strong> {receiptData.course}</p>
+              <p><strong>Phone:</strong> {receiptData.phone || "-"}</p>
               <p><strong>College Total:</strong> {receiptData.collegeTotalFee}</p>
               <p><strong>College Paid:</strong> {receiptData.collegePaid}</p>
               <p><strong>College Balance:</strong> {receiptData.collegeBalance}</p>
               <p><strong>Hostel Balance:</strong> {receiptData.hostelBalance}</p>
+              {canWhatsApp && (
+                <p className="hint">WhatsApp can’t auto-attach the PDF; download it and attach manually.</p>
+              )}
             </div>
           )}
         </div>
@@ -564,6 +739,8 @@ export default function App() {
           </ul>
         )}
       </section>
+        </>
+      )}
     </div>
   );
 }
