@@ -810,7 +810,7 @@ export default function App() {
       </datalist>
       <header className="hero">
         <h1>College Fee & Hostel Billing</h1>
-        <p>Built from your Excel structure: fees, payments, attendance, balances, receipt</p>
+        <p>Fee collection, hostel billing, receipts & balances</p>
         <div className="topbar">
           <span className="badge">
             {me.name} ({me.role})
