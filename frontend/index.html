@@ -78,6 +78,14 @@
           show("A background error stopped the app. Refresh (Ctrl+F5). If it still fails, try Incognito mode.", reason);
         });
 
+        window.addEventListener("DOMContentLoaded", () => {
+          const moduleScript = document.querySelector('script[type="module"][src]');
+          if (!moduleScript) return;
+          moduleScript.addEventListener("error", () => {
+            show("Failed to load the app JavaScript. Refresh (Ctrl+F5).", `Script failed to load: ${moduleScript.getAttribute("src")}`);
+          });
+        });
+
         setTimeout(() => {
           const el = document.getElementById("rootFallback");
           if (!el) return;
@@ -86,6 +94,15 @@
             const lines = [];
 
             const moduleScript = document.querySelector('script[type="module"][src]');
+            lines.push(`Boot started: ${String(Boolean(window.__BILLING_BOOT_STARTED__))}`);
+            lines.push(`Boot rendered: ${String(Boolean(window.__BILLING_BOOT_RENDERED__))}`);
+            if (window.__BILLING_BOOT_ERROR__) {
+              lines.push("");
+              lines.push("Boot error:");
+              lines.push(String(window.__BILLING_BOOT_ERROR__).slice(0, 1200));
+            }
+            lines.push("");
+
             if (moduleScript && moduleScript.getAttribute("src")) {
               const src = moduleScript.getAttribute("src");
               const r = await tryFetchText(src);
