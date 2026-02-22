@@ -648,95 +648,230 @@ app.get("/api/receipt/:pin/pdf", authRequired, anyRoleRequired(BILLING_ROLES), a
     const left = doc.page.margins.left;
     const right = pageWidth - doc.page.margins.right;
 
-    // Header band
+    const toWords = (n) => {
+      const num = Math.floor(Math.max(0, Number(n || 0)));
+      if (num === 0) return "Zero";
+      const ones = [
+        "",
+        "One",
+        "Two",
+        "Three",
+        "Four",
+        "Five",
+        "Six",
+        "Seven",
+        "Eight",
+        "Nine",
+        "Ten",
+        "Eleven",
+        "Twelve",
+        "Thirteen",
+        "Fourteen",
+        "Fifteen",
+        "Sixteen",
+        "Seventeen",
+        "Eighteen",
+        "Nineteen"
+      ];
+      const tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
+
+      const twoDigits = (x) => {
+        if (x < 20) return ones[x];
+        const t = Math.floor(x / 10);
+        const o = x % 10;
+        return `${tens[t]}${o ? " " + ones[o] : ""}`.trim();
+      };
+
+      const threeDigits = (x) => {
+        const h = Math.floor(x / 100);
+        const r = x % 100;
+        if (!h) return twoDigits(r);
+        if (!r) return `${ones[h]} Hundred`;
+        return `${ones[h]} Hundred ${twoDigits(r)}`;
+      };
+
+      // Indian numbering: crore, lakh, thousand, hundred
+      let x = num;
+      const parts = [];
+      const crore = Math.floor(x / 10000000);
+      if (crore) {
+        parts.push(`${threeDigits(crore)} Crore`);
+        x %= 10000000;
+      }
+      const lakh = Math.floor(x / 100000);
+      if (lakh) {
+        parts.push(`${threeDigits(lakh)} Lakh`);
+        x %= 100000;
+      }
+      const thousand = Math.floor(x / 1000);
+      if (thousand) {
+        parts.push(`${threeDigits(thousand)} Thousand`);
+        x %= 1000;
+      }
+      if (x) parts.push(threeDigits(x));
+      return parts.join(" ").replace(/\s+/g, " ").trim();
+    };
+
+    const border = "#1E3A8A";
+    const fillLight = "#EEF2FF";
+
+    const contentLeft = left - 10;
+    const contentRight = right + 10;
+    const contentTop = 40;
+    const contentBottom = pageHeight - 50;
+
+    // Outer border
     doc.save();
-    doc.rect(0, 0, pageWidth, 110).fill("#0B1220");
+    doc.lineWidth(1.2).strokeColor(border).rect(contentLeft, contentTop, contentRight - contentLeft, contentBottom - contentTop).stroke();
     doc.restore();
 
-    doc.fillColor("#FFFFFF").fontSize(20).text("College Billing System", left, 28, { width: right - left });
+    // Header: College name
     doc
-      .fillColor("#BFD3FF")
-      .fontSize(11)
-      .text(kind === "balance" ? "Balance Due Receipt" : "Payment Summary Receipt", left, 56, {
-        width: right - left
+      .fontSize(12)
+      .fillColor("#111827")
+      .font("Helvetica-Bold")
+      .text(String(collegeName || "College").toUpperCase(), contentLeft + 10, contentTop + 12, {
+        width: contentRight - contentLeft - 20,
+        align: "center"
+      });
+    doc.font("Helvetica").fillColor("#111827").fontSize(10).text(`College Code: ${data.collegeKey || "default"}`, contentLeft + 10, contentTop + 30, {
+      width: contentRight - contentLeft - 20,
+      align: "center"
+    });
+
+    // Title band
+    const bandY = contentTop + 52;
+    doc.save();
+    doc.fillColor(fillLight).rect(contentLeft, bandY, contentRight - contentLeft, 28).fill();
+    doc.restore();
+    doc
+      .font("Helvetica-Bold")
+      .fillColor(border)
+      .fontSize(12)
+      .text("ONLINE FEES RECEIPT", contentLeft + 10, bandY + 8, {
+        width: contentRight - contentLeft - 20,
+        align: "center"
       });
 
-    doc
-      .fillColor("#E5E7EB")
-      .fontSize(10)
-      .text(`Generated: ${generatedOn.toLocaleString()}`, left, 78, { width: right - left });
-
-    doc
-      .fillColor("#E5E7EB")
-      .fontSize(10)
-      .text(`Receipt Key: ${receiptKey}`, left, 92, { width: right - left });
-
-    let y = 130;
-
-    const drawSectionTitle = (title) => {
-      doc.fillColor("#0F172A").fontSize(13).text(title, left, y);
-      y += 8;
-      doc.moveTo(left, y).lineTo(right, y).lineWidth(1).strokeColor("#E2E8F0").stroke();
-      y += 12;
-    };
-
-    const drawRow = (label, value) => {
-      doc.fillColor("#334155").fontSize(10).text(label, left, y, { width: 170 });
-      doc
-        .fillColor("#0F172A")
-        .fontSize(11)
-        .text(String(value ?? "-"), left + 180, y, { width: right - (left + 180) });
-      y += 18;
-    };
-
-    const drawMoneyRow = (label, value) => drawRow(label, money(value));
-
-    drawSectionTitle("Student Details");
-    drawRow("College", `${data.collegeKey || "default"} - ${collegeName}`);
-    drawRow("PIN", data.pin);
-    drawRow("Name", data.name);
-    drawRow("Course", data.course);
-    drawRow("Phone", data.phone || "-");
-
-    y += 8;
-    drawSectionTitle("Fee Summary");
-
-    // Summary card background
-    const cardY = y - 2;
-    const cardHeight = 110;
+    // Info box
+    let y = bandY + 36;
+    const boxH = 88;
     doc.save();
-    doc.roundedRect(left, cardY, right - left, cardHeight, 10).fill("#F8FAFC");
+    doc.strokeColor(border).lineWidth(1).rect(contentLeft, y, contentRight - contentLeft, boxH).stroke();
     doc.restore();
 
-    y += 8;
-    drawMoneyRow("College Total Fee", data.collegeTotalFee);
-    drawMoneyRow("College Paid", data.collegePaid);
-    drawMoneyRow("College Balance", data.collegeBalance);
-    drawMoneyRow("Hostel Charged", data.hostelCharged);
-    drawMoneyRow("Hostel Paid", data.hostelPaid);
-    drawMoneyRow("Hostel Balance", data.hostelBalance);
+    const labelX1 = contentLeft + 12;
+    const valueX1 = contentLeft + 95;
+    const labelX2 = contentLeft + 320;
+    const valueX2 = contentLeft + 400;
 
-    y += 10;
-    doc.moveTo(left, y).lineTo(right, y).lineWidth(1).strokeColor("#E2E8F0").stroke();
-    y += 12;
+    const infoRow = (label, value, x1, x2, yy) => {
+      doc.font("Helvetica-Bold").fillColor("#111827").fontSize(9).text(label, x1, yy);
+      doc.font("Helvetica").fillColor("#111827").fontSize(9).text(String(value ?? "-"), x2, yy, { width: 200 });
+    };
 
-    doc.fillColor("#0F172A").fontSize(13).text("Total Due", left, y);
-    doc.fillColor("#0F172A").fontSize(13).text(money(totalBalance), left, y, { width: right - left, align: "right" });
-    y += 20;
+    const dateStr = generatedOn.toLocaleDateString();
+    infoRow("Name", data.name, labelX1, valueX1, y + 10);
+    infoRow("PIN", data.pin, labelX1, valueX1, y + 26);
+    infoRow("Course", data.course, labelX1, valueX1, y + 42);
+    infoRow("Phone", data.phone || "-", labelX1, valueX1, y + 58);
+    infoRow("Bill No", receiptKey, labelX2, valueX2, y + 10);
+    infoRow("Date", dateStr, labelX2, valueX2, y + 26);
+    infoRow("Type", kind === "balance" ? "Balance Due" : "Payment Summary", labelX2, valueX2, y + 42);
 
-    doc.fillColor("#475569").fontSize(10);
+    y = y + boxH + 14;
+
+    // Particulars table
+    const tableX = contentLeft;
+    const tableW = contentRight - contentLeft;
+    const colSno = 50;
+    const colAmt = 120;
+    const colPart = tableW - colSno - colAmt;
+
+    const headerH = 26;
+    doc.save();
+    doc.fillColor(fillLight).rect(tableX, y, tableW, headerH).fill();
+    doc.strokeColor(border).lineWidth(1).rect(tableX, y, tableW, headerH).stroke();
+    doc.restore();
+
+    doc.font("Helvetica-Bold").fillColor(border).fontSize(10);
+    doc.text("S.No", tableX + 10, y + 8, { width: colSno - 20 });
+    doc.text("PARTICULARS", tableX + colSno, y + 8, { width: colPart, align: "center" });
+    doc.text("AMOUNT (Rs.)", tableX + colSno + colPart, y + 8, { width: colAmt - 10, align: "right" });
+
+    const rows = [];
     if (kind === "balance") {
-      doc.text("Please pay the remaining balance at the college office.", left, y, { width: right - left });
+      rows.push({ label: "College Fee Balance", amount: toNumber(data.collegeBalance) });
+      if (toNumber(data.hostelBalance) > 0 || Boolean(data.hasHostel)) {
+        rows.push({ label: "Hostel Fee Balance", amount: toNumber(data.hostelBalance) });
+      }
     } else {
-      doc.text("Thank you. This receipt was generated by the College Billing System.", left, y, { width: right - left });
+      rows.push({ label: "College Fee Paid (Total)", amount: toNumber(data.collegePaid) });
+      if (toNumber(data.hostelPaid) > 0 || Boolean(data.hasHostel)) {
+        rows.push({ label: "Hostel Fee Paid (Total)", amount: toNumber(data.hostelPaid) });
+      }
     }
 
-    // Footer
+    const total =
+      kind === "balance"
+        ? totalBalance
+        : toNumber(data.collegePaid) + toNumber(data.hostelPaid);
+
+    const rowH = 34;
+    let rowY = y + headerH;
+    rows.forEach((r, idx) => {
+      doc.save();
+      doc.strokeColor(border).lineWidth(1).rect(tableX, rowY, tableW, rowH).stroke();
+      doc.restore();
+      // inner vertical lines
+      doc.save();
+      doc.strokeColor(border).lineWidth(1);
+      doc.moveTo(tableX + colSno, rowY).lineTo(tableX + colSno, rowY + rowH).stroke();
+      doc.moveTo(tableX + colSno + colPart, rowY).lineTo(tableX + colSno + colPart, rowY + rowH).stroke();
+      doc.restore();
+
+      doc.font("Helvetica").fillColor("#111827").fontSize(10);
+      doc.text(String(idx + 1), tableX + 10, rowY + 10, { width: colSno - 20 });
+      doc.text(r.label, tableX + colSno + 10, rowY + 10, { width: colPart - 20 });
+      doc.text(money(r.amount), tableX + colSno + colPart + 10, rowY + 10, { width: colAmt - 20, align: "right" });
+      rowY += rowH;
+    });
+
+    // Total row
+    doc.save();
+    doc.strokeColor(border).lineWidth(1).rect(tableX, rowY, tableW, rowH).stroke();
+    doc.restore();
+    doc.save();
+    doc.strokeColor(border).lineWidth(1);
+    doc.moveTo(tableX + colSno, rowY).lineTo(tableX + colSno, rowY + rowH).stroke();
+    doc.moveTo(tableX + colSno + colPart, rowY).lineTo(tableX + colSno + colPart, rowY + rowH).stroke();
+    doc.restore();
+
+    doc.font("Helvetica-Bold").fillColor("#111827").fontSize(10);
+    doc.text("", tableX + 10, rowY + 10, { width: colSno - 20 });
+    doc.text("TOTAL", tableX + colSno + 10, rowY + 10, { width: colPart - 20, align: "right" });
+    doc.text(money(total), tableX + colSno + colPart + 10, rowY + 10, { width: colAmt - 20, align: "right" });
+
+    rowY += rowH + 10;
+
+    // Amount in words
+    doc.save();
+    doc.strokeColor(border).lineWidth(1).rect(tableX, rowY, tableW, 36).stroke();
+    doc.restore();
+    doc.font("Helvetica-Bold").fillColor("#111827").fontSize(9).text("Rupees:", tableX + 10, rowY + 12);
+    doc.font("Helvetica").fillColor("#111827").fontSize(9).text(`${toWords(total)} Only`, tableX + 70, rowY + 12, {
+      width: tableW - 80
+    });
+
+    rowY += 48;
+
+    // Footer note
     doc
-      .fillColor("#94A3B8")
+      .font("Helvetica")
+      .fillColor("#374151")
       .fontSize(9)
-      .text("This document is computer-generated and does not require a signature.", left, pageHeight - 60, {
-        width: right - left,
+      .text("Electronically generated receipt. No signature required.", tableX + 10, contentBottom - 28, {
+        width: tableW - 20,
         align: "center"
       });
 
