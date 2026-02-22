@@ -77,10 +77,20 @@ const allowedOrigins = (process.env.FRONTEND_URL || "")
   .map((item) => item.trim())
   .filter(Boolean);
 
+const isLocalDevOrigin = (origin) => {
+  const value = String(origin || "");
+  return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(value);
+};
+
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+      if (
+        !origin ||
+        allowedOrigins.length === 0 ||
+        allowedOrigins.includes(origin) ||
+        (process.env.NODE_ENV !== "production" && isLocalDevOrigin(origin))
+      ) {
         callback(null, true);
       } else {
         callback(new Error("CORS not allowed"));
