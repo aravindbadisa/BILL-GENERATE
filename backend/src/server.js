@@ -104,9 +104,28 @@ app.use(express.json());
 
 const toNumber = (value) => Number(value || 0);
 
-app.get("/", (req, res) => {
-  res.status(200).send("Backend is running. Try /api/health");
-});
+// If `frontend/dist` exists (built with `npm run build`), serve it from the backend.
+// This enables simple one-URL deployments (useful for local + tunnel sharing).
+(() => {
+  try {
+    const distDir = path.join(__dirname, "..", "..", "frontend", "dist");
+    const indexFile = path.join(distDir, "index.html");
+    if (!fs.existsSync(indexFile)) {
+      app.get("/", (req, res) => {
+        res.status(200).send("Backend is running. Try /api/health");
+      });
+      return;
+    }
+
+    app.use(express.static(distDir));
+    // SPA fallback for non-API routes
+    app.get(/^\/(?!api\/).*/, (req, res) => {
+      res.sendFile(indexFile);
+    });
+  } catch {
+    // Ignore static serving errors; API can still run.
+  }
+})();
 
 const sanitizeUser = (user) => ({
   id: String(user._id),
