@@ -37,6 +37,42 @@ export default function App() {
   const [receiptData, setReceiptData] = useState(null);
   const [receiptPhone, setReceiptPhone] = useState("");
 
+  const readResponseBody = async (res) => {
+    const contentType = String(res.headers.get("content-type") || "").toLowerCase();
+    if (contentType.includes("application/json")) {
+      try {
+        return { kind: "json", value: await res.json() };
+      } catch {
+        return { kind: "json", value: null };
+      }
+    }
+    let text = "";
+    try {
+      text = await res.text();
+    } catch {
+      text = "";
+    }
+    return { kind: "text", value: text };
+  };
+
+  const errorFromResponse = (res, body) => {
+    if (body?.kind === "json" && body.value && typeof body.value === "object") {
+      const msg = body.value.message;
+      if (typeof msg === "string" && msg.trim()) return msg.trim();
+    }
+
+    if (body?.kind === "text") {
+      const text = String(body.value || "");
+      if (/<!doctype/i.test(text) || /<html/i.test(text)) {
+        return `API URL is wrong (frontend returned HTML). Fix frontend/.env: VITE_API_URL=http://localhost:5000 then restart frontend.`;
+      }
+      const firstLine = text.split(/\r?\n/)[0]?.trim();
+      if (firstLine) return firstLine.slice(0, 160);
+    }
+
+    return `Request failed (HTTP ${res.status})`;
+  };
+
   const callApi = async (path, method = "GET", body = null) => {
     const headers = {};
     if (body !== null) headers["Content-Type"] = "application/json";
@@ -44,9 +80,10 @@ export default function App() {
     const options = { method, headers };
     if (body !== null) options.body = JSON.stringify(body);
     const res = await fetch(`${API_BASE}${path}`, options);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.message || "Request failed");
-    return data;
+    const parsed = await readResponseBody(res);
+    if (!res.ok) throw new Error(errorFromResponse(res, parsed));
+    if (parsed.kind !== "json") throw new Error("Server returned non-JSON response");
+    return parsed.value;
   };
 
   const uploadFile = async (path, file) => {
@@ -55,9 +92,10 @@ export default function App() {
     const fd = new FormData();
     fd.append("file", file);
     const res = await fetch(`${API_BASE}${path}`, { method: "POST", headers, body: fd });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.message || "Upload failed");
-    return data;
+    const parsed = await readResponseBody(res);
+    if (!res.ok) throw new Error(errorFromResponse(res, parsed));
+    if (parsed.kind !== "json") throw new Error("Server returned non-JSON response");
+    return parsed.value;
   };
 
   const loadMe = async (nextToken) => {
@@ -66,9 +104,10 @@ export default function App() {
         const headers = {};
         if (nextToken) headers.Authorization = `Bearer ${nextToken}`;
         const res = await fetch(`${API_BASE}/api/auth/me`, { headers });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.message || "Unauthorized");
-        return json;
+        const parsed = await readResponseBody(res);
+        if (!res.ok) throw new Error(errorFromResponse(res, parsed));
+        if (parsed.kind !== "json") throw new Error("Server returned non-JSON response");
+        return parsed.value;
       })();
       setMe(data.user);
     } catch (e) {
