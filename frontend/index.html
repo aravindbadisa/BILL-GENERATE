@@ -96,6 +96,8 @@
             const moduleScript = document.querySelector('script[type="module"][src]');
             lines.push(`Boot started: ${String(Boolean(window.__BILLING_BOOT_STARTED__))}`);
             lines.push(`Boot rendered: ${String(Boolean(window.__BILLING_BOOT_RENDERED__))}`);
+            lines.push(`Module onload: ${String(window.__BILLING_MODULE_SCRIPT_LOADED__ || "")}`);
+            lines.push(`Module onerror: ${String(window.__BILLING_MODULE_SCRIPT_ERROR__ || "")}`);
             if (window.__BILLING_BOOT_ERROR__) {
               lines.push("");
               lines.push("Boot error:");
@@ -141,5 +143,21 @@
       </div>
     </div>
     <script type="module" src="/src/main.jsx"></script>
+    <script>
+      (function () {
+        try {
+          const s = document.querySelector('script[type="module"][src]');
+          if (!s) return;
+          s.addEventListener("load", () => {
+            window.__BILLING_MODULE_SCRIPT_LOADED__ = s.getAttribute("src") || s.src || true;
+          });
+          s.addEventListener("error", () => {
+            window.__BILLING_MODULE_SCRIPT_ERROR__ = s.getAttribute("src") || s.src || true;
+          });
+        } catch {
+          // ignore
+        }
+      })();
+    </script>
   </body>
 </html>
