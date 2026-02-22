@@ -18,6 +18,7 @@ const HostelFeeMaster = require("./models/HostelFeeMaster");
 const HostelAttendance = require("./models/HostelAttendance");
 const HostelPayment = require("./models/HostelPayment");
 const StudentImport = require("./models/StudentImport");
+const PaymentReceipt = require("./models/PaymentReceipt");
 
 dotenv.config();
 
@@ -284,6 +285,194 @@ const getCollegeName = (collegeKeyRaw) => {
   return collegeNames?.[code] || "Unknown College";
 };
 
+const generateReceiptNo = () => `PR-${crypto.randomBytes(5).toString("hex").toUpperCase()}`;
+const generateAccessKey = () => crypto.randomBytes(3).toString("hex").toUpperCase(); // 6 chars
+
+const loadPaymentReceiptOrRespond = async (req, res, options = {}) => {
+  const receiptNo = String(req.params.receiptNo || "").trim();
+  if (!receiptNo) {
+    res.status(400).json({ message: "receiptNo is required" });
+    return null;
+  }
+
+  const record = await PaymentReceipt.findOne({ receiptNo });
+  if (!record) {
+    res.status(404).json({ message: "Receipt not found" });
+    return null;
+  }
+
+  if (options.public === true) {
+    const key = String(req.query.key || "").trim();
+    if (!key || key !== record.accessKey) {
+      res.status(401).json({ message: "Invalid receipt key" });
+      return null;
+    }
+    return record;
+  }
+
+  // Authenticated access: enforce college scoping unless admin.
+  const role = String(req.user?.role || "").toLowerCase().trim();
+  if (role !== "admin") {
+    const userCollege = normalizeCollegeKey(req.user?.collegeKey);
+    if (normalizeCollegeKey(record.collegeKey) !== userCollege) {
+      res.status(403).json({ message: "Forbidden" });
+      return null;
+    }
+  }
+
+  return record;
+};
+
+const renderPaymentReceiptPdf = (res, record) => {
+  const generatedOn = new Date();
+  const money = (n) => Number(n || 0).toFixed(2);
+
+  const filename = `payment_receipt_${record.receiptNo}.pdf`;
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+
+  const doc = new PDFDocument({ size: "A4", margin: 50 });
+  doc.pipe(res);
+
+  const border = "#1E3A8A";
+  const fillLight = "#EEF2FF";
+
+  const pageWidth = doc.page.width;
+  const pageHeight = doc.page.height;
+  const left = doc.page.margins.left;
+  const right = pageWidth - doc.page.margins.right;
+
+  const contentLeft = left - 10;
+  const contentRight = right + 10;
+  const contentTop = 40;
+  const contentBottom = pageHeight - 50;
+
+  doc.save();
+  doc
+    .lineWidth(1.2)
+    .strokeColor(border)
+    .rect(contentLeft, contentTop, contentRight - contentLeft, contentBottom - contentTop)
+    .stroke();
+  doc.restore();
+
+  const collegeName = record.collegeName || getCollegeName(record.collegeKey);
+
+  doc
+    .fontSize(12)
+    .fillColor("#111827")
+    .font("Helvetica-Bold")
+    .text(String(collegeName || "College").toUpperCase(), contentLeft + 10, contentTop + 12, {
+      width: contentRight - contentLeft - 20,
+      align: "center"
+    });
+
+  doc.font("Helvetica").fillColor("#111827").fontSize(10).text(`College Code: ${record.collegeKey || "default"}`, contentLeft + 10, contentTop + 30, {
+    width: contentRight - contentLeft - 20,
+    align: "center"
+  });
+
+  const bandY = contentTop + 52;
+  doc.save();
+  doc.fillColor(fillLight).rect(contentLeft, bandY, contentRight - contentLeft, 28).fill();
+  doc.restore();
+  doc
+    .font("Helvetica-Bold")
+    .fillColor(border)
+    .fontSize(12)
+    .text("PAYMENT RECEIPT", contentLeft + 10, bandY + 8, {
+      width: contentRight - contentLeft - 20,
+      align: "center"
+    });
+
+  let y = bandY + 36;
+  const boxH = 92;
+  doc.save();
+  doc.strokeColor(border).lineWidth(1).rect(contentLeft, y, contentRight - contentLeft, boxH).stroke();
+  doc.restore();
+
+  const labelX1 = contentLeft + 12;
+  const valueX1 = contentLeft + 95;
+  const labelX2 = contentLeft + 320;
+  const valueX2 = contentLeft + 400;
+
+  const infoRow = (label, value, x1, x2, yy) => {
+    doc.font("Helvetica-Bold").fillColor("#111827").fontSize(9).text(label, x1, yy);
+    doc.font("Helvetica").fillColor("#111827").fontSize(9).text(String(value ?? "-"), x2, yy, { width: 220 });
+  };
+
+  const payDate = record.paymentDate ? new Date(record.paymentDate) : generatedOn;
+  infoRow("Name", record.studentName || "-", labelX1, valueX1, y + 10);
+  infoRow("PIN", record.pin || "-", labelX1, valueX1, y + 26);
+  infoRow("Course", record.course || "-", labelX1, valueX1, y + 42);
+  infoRow("Phone", record.phone || "-", labelX1, valueX1, y + 58);
+
+  infoRow("Bill No", record.receiptNo, labelX2, valueX2, y + 10);
+  infoRow("Key", record.accessKey, labelX2, valueX2, y + 26);
+  infoRow("Date", payDate.toLocaleDateString(), labelX2, valueX2, y + 42);
+  infoRow("Time", payDate.toLocaleTimeString(), labelX2, valueX2, y + 58);
+
+  y = y + boxH + 14;
+
+  const tableX = contentLeft;
+  const tableW = contentRight - contentLeft;
+  const colSno = 50;
+  const colAmt = 140;
+  const colPart = tableW - colSno - colAmt;
+
+  const headerH = 26;
+  doc.save();
+  doc.fillColor(fillLight).rect(tableX, y, tableW, headerH).fill();
+  doc.strokeColor(border).lineWidth(1).rect(tableX, y, tableW, headerH).stroke();
+  doc.restore();
+
+  doc.font("Helvetica-Bold").fillColor(border).fontSize(10);
+  doc.text("S.No", tableX + 10, y + 8, { width: colSno - 20 });
+  doc.text("PARTICULARS", tableX + colSno, y + 8, { width: colPart, align: "center" });
+  doc.text("AMOUNT (Rs.)", tableX + colSno + colPart, y + 8, { width: colAmt - 10, align: "right" });
+
+  const rowH = 34;
+  const rowY = y + headerH;
+
+  doc.save();
+  doc.strokeColor(border).lineWidth(1).rect(tableX, rowY, tableW, rowH).stroke();
+  doc.moveTo(tableX + colSno, rowY).lineTo(tableX + colSno, rowY + rowH).stroke();
+  doc.moveTo(tableX + colSno + colPart, rowY).lineTo(tableX + colSno + colPart, rowY + rowH).stroke();
+  doc.restore();
+
+  const particulars =
+    record.paymentType === "hostel"
+      ? `Hostel Fee Payment${record.month ? ` (${record.month})` : ""}`
+      : "College Fee Payment";
+
+  doc.font("Helvetica").fillColor("#111827").fontSize(10);
+  doc.text("1", tableX + 10, rowY + 10, { width: colSno - 20 });
+  doc.text(particulars, tableX + colSno + 10, rowY + 10, { width: colPart - 20 });
+  doc.text(money(record.amountPaid), tableX + colSno + colPart + 10, rowY + 10, { width: colAmt - 20, align: "right" });
+
+  const totalY = rowY + rowH;
+  doc.save();
+  doc.strokeColor(border).lineWidth(1).rect(tableX, totalY, tableW, rowH).stroke();
+  doc.moveTo(tableX + colSno, totalY).lineTo(tableX + colSno, totalY + rowH).stroke();
+  doc.moveTo(tableX + colSno + colPart, totalY).lineTo(tableX + colSno + colPart, totalY + rowH).stroke();
+  doc.restore();
+
+  doc.font("Helvetica-Bold").fillColor("#111827").fontSize(10);
+  doc.text("", tableX + 10, totalY + 10, { width: colSno - 20 });
+  doc.text("TOTAL", tableX + colSno + 10, totalY + 10, { width: colPart - 20, align: "right" });
+  doc.text(money(record.amountPaid), tableX + colSno + colPart + 10, totalY + 10, { width: colAmt - 20, align: "right" });
+
+  doc
+    .font("Helvetica")
+    .fillColor("#374151")
+    .fontSize(9)
+    .text("Electronically generated receipt. No signature required.", tableX + 10, contentBottom - 28, {
+      width: tableW - 20,
+      align: "center"
+    });
+
+  doc.end();
+};
+
 app.get("/api/health", (req, res) => {
   res.json({
     ok: true,
@@ -441,7 +630,25 @@ app.post(
       amountPaid: toNumber(amountPaid),
       phone: String(phone || "").trim()
     });
-    res.status(201).json(payment);
+
+    const collegeName = getCollegeName(collegeKey);
+    const receipt = await PaymentReceipt.create({
+      receiptNo: generateReceiptNo(),
+      accessKey: generateAccessKey(),
+      collegeKey,
+      collegeName,
+      pin,
+      paymentType: "college",
+      amountPaid: toNumber(amountPaid),
+      month: "",
+      paymentDate: payment.date,
+      createdBy: String(req.auth?.sub || ""),
+      studentName: student.name || "",
+      course: student.course || "",
+      phone: String(student.phone || payment.phone || "").trim()
+    });
+
+    res.status(201).json({ payment, receiptNo: receipt.receiptNo, receiptKey: receipt.accessKey });
   } catch (error) {
     res.status(500).json({ message: "Failed to save college payment" });
   }
@@ -560,7 +767,25 @@ app.post(
       amountPaid: toNumber(amountPaid),
       phone: String(phone || "").trim()
     });
-    res.status(201).json(payment);
+
+    const collegeName = getCollegeName(collegeKey);
+    const receipt = await PaymentReceipt.create({
+      receiptNo: generateReceiptNo(),
+      accessKey: generateAccessKey(),
+      collegeKey,
+      collegeName,
+      pin,
+      paymentType: "hostel",
+      amountPaid: toNumber(amountPaid),
+      month: String(month || "").trim(),
+      paymentDate: payment.date,
+      createdBy: String(req.auth?.sub || ""),
+      studentName: student.name || "",
+      course: student.course || "",
+      phone: String(student.phone || payment.phone || "").trim()
+    });
+
+    res.status(201).json({ payment, receiptNo: receipt.receiptNo, receiptKey: receipt.accessKey });
   } catch (error) {
     res.status(500).json({ message: "Failed to save hostel payment" });
   }
@@ -878,6 +1103,42 @@ app.get("/api/receipt/:pin/pdf", authRequired, anyRoleRequired(BILLING_ROLES), a
     doc.end();
   } catch (error) {
     res.status(500).json({ message: "Failed to build receipt PDF" });
+  }
+});
+
+app.get("/api/payment-receipts/:receiptNo", authRequired, anyRoleRequired(BILLING_ROLES), async (req, res) => {
+  try {
+    const record = await loadPaymentReceiptOrRespond(req, res);
+    if (!record) return;
+    res.json(record);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to load payment receipt" });
+  }
+});
+
+app.get("/api/payment-receipts/:receiptNo/pdf", authRequired, anyRoleRequired(BILLING_ROLES), async (req, res) => {
+  try {
+    const record = await loadPaymentReceiptOrRespond(req, res);
+    if (!record) return;
+    renderPaymentReceiptPdf(res, record);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to build payment receipt PDF" });
+  }
+});
+
+// Optional public access (students can view without login) if enabled by env.
+// Example: /api/public/payment-receipts/PR-XXXX/pdf?key=YYYYYY
+app.get("/api/public/payment-receipts/:receiptNo/pdf", async (req, res) => {
+  try {
+    if (!truthy(process.env.PUBLIC_RECEIPTS)) {
+      return res.status(404).send("Not found");
+    }
+
+    const record = await loadPaymentReceiptOrRespond(req, res, { public: true });
+    if (!record) return;
+    renderPaymentReceiptPdf(res, record);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to build payment receipt PDF" });
   }
 });
 

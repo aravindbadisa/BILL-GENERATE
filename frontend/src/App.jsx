@@ -61,6 +61,7 @@ export default function App() {
   const [receiptPhone, setReceiptPhone] = useState("");
   const [receiptLoading, setReceiptLoading] = useState(false);
   const [pinSearch, setPinSearch] = useState("");
+  const [lastPaymentReceipt, setLastPaymentReceipt] = useState(null);
 
   const readResponseBody = async (res) => {
     const contentType = String(res.headers.get("content-type") || "").toLowerCase();
@@ -197,7 +198,7 @@ export default function App() {
     setMessage("");
     setError("");
     try {
-      await callApi(path, "POST", body);
+      const resp = await callApi(path, "POST", body);
       setMessage("Saved successfully.");
       reset();
       await loadDashboard();
@@ -205,6 +206,10 @@ export default function App() {
       // Keep the selected student's balances in sync after saving payments/attendance.
       const pin = String(receiptPin || "").trim();
       if (pin) await loadReceiptForPin(pin);
+
+      if (resp && typeof resp === "object" && resp.receiptNo) {
+        setLastPaymentReceipt({ receiptNo: resp.receiptNo, receiptKey: resp.receiptKey || "" });
+      }
     } catch (e) {
       setError(e.message);
     }
@@ -234,6 +239,7 @@ export default function App() {
     setReceiptPin("");
     setReceiptData(null);
     setReceiptPhone("");
+    setLastPaymentReceipt(null);
     setCollegePaymentForm(initialCollegePayment);
     setAttendanceForm(initialAttendance);
     setHostelPaymentForm(initialHostelPayment);
@@ -301,7 +307,7 @@ export default function App() {
     setHostelPaymentForm((p) => ({ ...p, pin: receiptData.pin }));
   }, [receiptData?.pin]);
 
-      const downloadReceiptPdf = async (kind = "auto") => {
+  const downloadReceiptPdf = async (kind = "auto") => {
     setMessage("");
     setError("");
     try {
@@ -326,6 +332,34 @@ export default function App() {
       a.remove();
       URL.revokeObjectURL(url);
       setMessage("PDF downloaded.");
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const downloadPaymentReceiptPdf = async () => {
+    setMessage("");
+    setError("");
+    try {
+      const receiptNo = String(lastPaymentReceipt?.receiptNo || "").trim();
+      if (!receiptNo) throw new Error("No payment receipt yet");
+      const headers = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const res = await fetch(`${API_BASE}/api/payment-receipts/${encodeURIComponent(receiptNo)}/pdf`, { headers });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.message || "Failed to download payment receipt PDF");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `payment_receipt_${receiptNo}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setMessage("Payment receipt PDF downloaded.");
     } catch (e) {
       setError(e.message);
     }
@@ -1385,12 +1419,21 @@ export default function App() {
             <button type="button" className="secondary" onClick={() => downloadReceiptPdf("auto")} disabled={!receiptData?.pin}>
               Download PDF
             </button>
+            <button type="button" className="secondary" onClick={downloadPaymentReceiptPdf} disabled={!lastPaymentReceipt?.receiptNo}>
+              Payment Receipt PDF
+            </button>
             {canWhatsApp && (
               <button type="button" onClick={openWhatsApp} disabled={!receiptData?.pin}>
                 WhatsApp Message
               </button>
             )}
           </div>
+          {lastPaymentReceipt?.receiptNo && (
+            <p className="hint" style={{ marginTop: 8 }}>
+              Latest Payment Receipt: <b>{lastPaymentReceipt.receiptNo}</b>
+              {lastPaymentReceipt.receiptKey ? ` (Key: ${lastPaymentReceipt.receiptKey})` : ""}
+            </p>
+          )}
           {receiptData && (
             <div className="receipt">
               <p><strong>College:</strong> {(receiptData.collegeKey || "default")} - {(receiptData.collegeName || "Unknown College")}</p>
