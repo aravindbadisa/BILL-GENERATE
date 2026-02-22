@@ -52,11 +52,24 @@ Based on workbook `College_Fee_System_fixed_v2.xlsm`:
 Requirements:
 - Node.js 20+
 - npm
+- MongoDB (optional: you can use in-memory DB for quick demo)
 
 ### One-click (Windows)
 
 - Double-click `run.cmd` (or run `.\run.ps1` in PowerShell).
 - This opens two new PowerShell windows: one for **backend** and one for **frontend**.
+
+### Share with anyone (one public link, Windows)
+
+This creates a temporary public link using a Cloudflare “quick tunnel” (no account needed).
+
+- Double-click `public-link.cmd` (or run `.\public-link.ps1`).
+- Keep that PowerShell window open.
+- Copy the URL printed like `https://xxxxx.trycloudflare.com` and share it.
+
+Notes:
+- This tunnel link changes each time you start it.
+- If the browser shows a blank page, do a hard refresh: `Ctrl+F5`.
 
 ### Backend
 
@@ -71,10 +84,10 @@ Set `backend/.env`:
 
 ```env
 PORT=5000
-MONGODB_URI=mongodb+srv://username:password@cluster-url/website_db?retryWrites=true&w=majority
+MONGODB_URI=mongodb://127.0.0.1:27017/website_db
 USE_IN_MEMORY_DB=false
 IN_MEMORY_DB_PATH=.data/mongo
-FRONTEND_URL=http://localhost:5173,https://your-site.netlify.app
+FRONTEND_URL=
 JWT_SECRET=change_this_to_a_long_random_secret
 ADMIN_EMAIL=admin@example.com
 ADMIN_PASSWORD=ChangeMe123!
