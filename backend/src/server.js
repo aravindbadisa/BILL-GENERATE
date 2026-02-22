@@ -651,6 +651,25 @@ app.post("/api/admin/users", authRequired, roleRequired("admin"), async (req, re
   }
 });
 
+app.post("/api/admin/users/:id/reset-password", authRequired, roleRequired("admin"), async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+    if (user.role === "admin") {
+      return res.status(400).json({ message: "Cannot reset password for admin user via this endpoint" });
+    }
+
+    const temporaryPassword = crypto.randomBytes(9).toString("base64url");
+    user.passwordHash = await bcrypt.hash(temporaryPassword, 10);
+    user.mustChangePassword = true;
+    await user.save();
+
+    res.json({ user: sanitizeUser(user), temporaryPassword });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to reset password" });
+  }
+});
+
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 const parseCsvLine = (line) => {

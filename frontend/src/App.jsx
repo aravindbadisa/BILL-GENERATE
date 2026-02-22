@@ -395,6 +395,19 @@ export default function App() {
     }
   };
 
+  const resetUserPassword = async (userId) => {
+    setMessage("");
+    setError("");
+    try {
+      const result = await callApi(`/api/admin/users/${encodeURIComponent(userId)}/reset-password`, "POST", {});
+      const temp = result?.temporaryPassword ? ` Temporary password: ${result.temporaryPassword}` : "";
+      setMessage(`Password reset.${temp}`);
+      await loadUsers();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
   const downloadTemplate = async () => {
     setMessage("");
     setError("");
@@ -680,6 +693,8 @@ export default function App() {
                     <th>Name</th>
                     <th>Role</th>
                     <th>Active</th>
+                    <th>Password</th>
+                    <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -690,6 +705,14 @@ export default function App() {
                       <td>{u.name}</td>
                       <td>{u.role}</td>
                       <td>{String(u.active)}</td>
+                      <td>{u.mustChangePassword ? "must set" : "set"}</td>
+                      <td>
+                        {u.role !== "admin" && (
+                          <button type="button" className="secondary" onClick={() => resetUserPassword(u.id)}>
+                            Reset Password
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
