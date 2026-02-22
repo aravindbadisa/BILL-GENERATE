@@ -201,6 +201,14 @@ export default function App() {
       setMessage("Saved successfully.");
       reset();
       await loadDashboard();
+
+      // Keep the selected student's balances in sync after saving payments/attendance.
+      if (me?.role && me.role !== "admin") {
+        const pin = String(receiptPin || "").trim();
+        if (pin) {
+          await loadReceiptForPin(pin);
+        }
+      }
     } catch (e) {
       setError(e.message);
     }
