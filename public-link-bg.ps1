@@ -53,7 +53,7 @@ Write-Host "Starting backend (background)..." -ForegroundColor Green
 Set-Location $backendDir
 if (Test-Path $backendLog) { Remove-Item $backendLog -Force }
 if (Test-Path $backendErr) { Remove-Item $backendErr -Force }
-$backendProc = Start-Process -PassThru -NoNewWindow -FilePath "npm" -ArgumentList @("start") -RedirectStandardOutput $backendLog -RedirectStandardError $backendErr
+$backendProc = Start-Process -PassThru -NoNewWindow -FilePath "cmd.exe" -ArgumentList @("/c", "npm", "start") -RedirectStandardOutput $backendLog -RedirectStandardError $backendErr
 
 Start-Sleep -Seconds 2
 
