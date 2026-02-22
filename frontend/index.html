@@ -21,6 +21,40 @@
     </style>
     <script>
       (function () {
+        // Capture early resource load failures for module scripts/styles (these don't always trigger window.onerror).
+        try {
+          document.addEventListener(
+            "load",
+            (e) => {
+              const t = e && e.target;
+              if (!t || !t.tagName) return;
+              if (t.tagName === "SCRIPT" && t.getAttribute && t.getAttribute("type") === "module") {
+                window.__BILLING_MODULE_SCRIPT_LOADED__ = t.getAttribute("src") || t.src || true;
+              }
+              if (t.tagName === "LINK" && t.getAttribute && t.getAttribute("rel") === "stylesheet") {
+                window.__BILLING_STYLESHEET_LOADED__ = t.getAttribute("href") || t.href || true;
+              }
+            },
+            true
+          );
+          document.addEventListener(
+            "error",
+            (e) => {
+              const t = e && e.target;
+              if (!t || !t.tagName) return;
+              if (t.tagName === "SCRIPT") {
+                window.__BILLING_MODULE_SCRIPT_ERROR__ = t.getAttribute("src") || t.src || true;
+              }
+              if (t.tagName === "LINK") {
+                window.__BILLING_STYLESHEET_ERROR__ = t.getAttribute("href") || t.href || true;
+              }
+            },
+            true
+          );
+        } catch {
+          // ignore
+        }
+
         const escapeHtml = (s) =>
           String(s || "")
             .replace(/&/g, "&amp;")
@@ -98,6 +132,8 @@
             lines.push(`Boot rendered: ${String(Boolean(window.__BILLING_BOOT_RENDERED__))}`);
             lines.push(`Module onload: ${String(window.__BILLING_MODULE_SCRIPT_LOADED__ || "")}`);
             lines.push(`Module onerror: ${String(window.__BILLING_MODULE_SCRIPT_ERROR__ || "")}`);
+            lines.push(`CSS onload: ${String(window.__BILLING_STYLESHEET_LOADED__ || "")}`);
+            lines.push(`CSS onerror: ${String(window.__BILLING_STYLESHEET_ERROR__ || "")}`);
             if (window.__BILLING_BOOT_ERROR__) {
               lines.push("");
               lines.push("Boot error:");
@@ -143,21 +179,5 @@
       </div>
     </div>
     <script type="module" src="/src/main.jsx"></script>
-    <script>
-      (function () {
-        try {
-          const s = document.querySelector('script[type="module"][src]');
-          if (!s) return;
-          s.addEventListener("load", () => {
-            window.__BILLING_MODULE_SCRIPT_LOADED__ = s.getAttribute("src") || s.src || true;
-          });
-          s.addEventListener("error", () => {
-            window.__BILLING_MODULE_SCRIPT_ERROR__ = s.getAttribute("src") || s.src || true;
-          });
-        } catch {
-          // ignore
-        }
-      })();
-    </script>
   </body>
 </html>

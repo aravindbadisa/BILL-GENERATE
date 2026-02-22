@@ -68,12 +68,12 @@ Write-Host "Waiting for public URL..." -ForegroundColor Cyan
 $deadline = (Get-Date).AddSeconds(30)
 $publicUrl = $null
 while ((Get-Date) -lt $deadline) {
-  if (Test-Path $tunnelLog) {
-    $text = Get-Content $tunnelLog -Raw -ErrorAction SilentlyContinue
-    if ($text) {
-      $m = [regex]::Match($text, "https://[a-z0-9-]+\\.trycloudflare\\.com", "IgnoreCase")
-      if ($m.Success) { $publicUrl = $m.Value; break }
-    }
+  $text = ""
+  if (Test-Path $tunnelErr) { $text += (Get-Content $tunnelErr -Raw -ErrorAction SilentlyContinue) }
+  if (Test-Path $tunnelLog) { $text += (Get-Content $tunnelLog -Raw -ErrorAction SilentlyContinue) }
+  if ($text) {
+    $m = [regex]::Match($text, "https://[a-z0-9-]+\\.trycloudflare\\.com", "IgnoreCase")
+    if ($m.Success) { $publicUrl = $m.Value; break }
   }
   Start-Sleep -Milliseconds 400
 }
@@ -81,10 +81,11 @@ while ((Get-Date) -lt $deadline) {
 Write-Host ""
 if (-not $publicUrl) {
   Write-Host "Could not detect the tunnel URL yet. Open the log:" -ForegroundColor Yellow
-  Write-Host "  $tunnelLog" -ForegroundColor Gray
+  Write-Host "  $tunnelErr" -ForegroundColor Gray
 } else {
   Write-Host "Public URL:" -ForegroundColor Green
   Write-Host "  $publicUrl" -ForegroundColor White
+  Write-Output $publicUrl
   Write-Host ""
   Write-Host "Open it in Chrome. If it shows 'App failed to load', wait 8 seconds and copy the details shown." -ForegroundColor Gray
 }
