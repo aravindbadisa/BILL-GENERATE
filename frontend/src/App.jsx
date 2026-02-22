@@ -1254,6 +1254,7 @@ export default function App() {
                   <p><strong>Name:</strong> {receiptData.name}</p>
                   <p><strong>Course:</strong> {receiptData.course}</p>
                   <p><strong>Phone:</strong> {receiptData.phone || "-"}</p>
+                  <p><strong>Receipt Key:</strong> {receiptData.receiptKey || "-"}</p>
                   <p><strong>College Balance:</strong> {receiptData.collegeBalance}</p>
                   <div className="inline" style={{ marginTop: 8 }}>
                     <label className="inline" style={{ gap: 8 }}>
@@ -1273,6 +1274,9 @@ export default function App() {
                   ) : (
                     <p className="hint">This student is college-only (no hostel).</p>
                   )}
+                  <p className="hint" style={{ marginTop: 6 }}>
+                    Generated: {receiptData.generatedOn ? new Date(receiptData.generatedOn).toLocaleString() : "-"}
+                  </p>
                 </div>
               ) : (
                 <p className="hint" style={{ marginTop: 10 }}>
@@ -1440,10 +1444,14 @@ export default function App() {
               <p><strong>Name:</strong> {receiptData.name}</p>
               <p><strong>Course:</strong> {receiptData.course}</p>
               <p><strong>Phone:</strong> {receiptData.phone || "-"}</p>
+              <p><strong>Receipt Key:</strong> {receiptData.receiptKey || "-"}</p>
               <p><strong>College Total:</strong> {receiptData.collegeTotalFee}</p>
               <p><strong>College Paid:</strong> {receiptData.collegePaid}</p>
               <p><strong>College Balance:</strong> {receiptData.collegeBalance}</p>
               <p><strong>Hostel Balance:</strong> {receiptData.hostelBalance}</p>
+              <p className="hint">
+                Generated: {receiptData.generatedOn ? new Date(receiptData.generatedOn).toLocaleString() : "-"}
+              </p>
               {canWhatsApp && (
                 <p className="hint">WhatsApp can’t auto-attach the PDF; download it and attach manually.</p>
               )}

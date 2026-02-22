@@ -263,6 +263,20 @@ const computeStudentBalances = async (collegeKey, pin) => {
   };
 };
 
+const receiptKeyForSnapshot = (snapshot) => {
+  const secret = String(process.env.JWT_SECRET || "insecure-dev-secret");
+  const payload = [
+    snapshot.collegeKey || "default",
+    snapshot.pin || "",
+    snapshot.collegeTotalFee ?? 0,
+    snapshot.collegePaid ?? 0,
+    snapshot.hostelCharged ?? 0,
+    snapshot.hostelPaid ?? 0
+  ].join("|");
+  const hex = crypto.createHmac("sha256", secret).update(payload).digest("hex").toUpperCase();
+  return `RCP-${hex.slice(0, 16)}`;
+};
+
 app.get("/api/health", (req, res) => {
   res.json({
     ok: true,
@@ -582,6 +596,7 @@ app.get("/api/receipt/:pin", authRequired, anyRoleRequired(BILLING_ROLES), async
 
     res.json({
       generatedOn: new Date().toISOString(),
+      receiptKey: receiptKeyForSnapshot(data),
       ...data
     });
   } catch (error) {
@@ -601,6 +616,7 @@ app.get("/api/receipt/:pin/pdf", authRequired, anyRoleRequired(BILLING_ROLES), a
     if (!data) return res.status(404).json({ message: "Student not found" });
 
     const generatedOn = new Date();
+    const receiptKey = receiptKeyForSnapshot(data);
     const totalBalance = toNumber(data.collegeBalance) + toNumber(data.hostelBalance);
     const kindRaw = String(req.query.kind || "").toLowerCase().trim();
     const kind =
@@ -615,45 +631,104 @@ app.get("/api/receipt/:pin/pdf", authRequired, anyRoleRequired(BILLING_ROLES), a
     const doc = new PDFDocument({ size: "A4", margin: 50 });
     doc.pipe(res);
 
-    doc.fontSize(18).text("College Billing System", { align: "left" });
-    doc.moveDown(0.2);
-    doc.fontSize(12).fillColor("#333").text(`Generated on: ${generatedOn.toLocaleString()}`);
-    doc.moveDown();
-
-    doc.fontSize(14).fillColor("#000").text(kind === "balance" ? "Balance Due" : "Receipt Summary");
-    doc.moveDown();
-
-    const lines = [
-      `PIN: ${data.pin}`,
-      `Name: ${data.name}`,
-      `Course: ${data.course}`,
-      data.phone ? `Phone: ${data.phone}` : null
-    ].filter(Boolean);
-    lines.forEach((line) => doc.fontSize(12).fillColor("#000").text(line));
-    doc.moveDown();
-
     const money = (n) => Number(n || 0).toFixed(0);
 
-    doc.fontSize(12).text(`College Total Fee: ${money(data.collegeTotalFee)}`);
-    doc.text(`College Paid: ${money(data.collegePaid)}`);
-    doc.text(`College Balance: ${money(data.collegeBalance)}`);
-    doc.moveDown(0.5);
-    doc.text(`Hostel Charged: ${money(data.hostelCharged)}`);
-    doc.text(`Hostel Paid: ${money(data.hostelPaid)}`);
-    doc.text(`Hostel Balance: ${money(data.hostelBalance)}`);
-    doc.moveDown();
+    const pageWidth = doc.page.width;
+    const pageHeight = doc.page.height;
+    const left = doc.page.margins.left;
+    const right = pageWidth - doc.page.margins.right;
 
+    // Header band
+    doc.save();
+    doc.rect(0, 0, pageWidth, 110).fill("#0B1220");
+    doc.restore();
+
+    doc.fillColor("#FFFFFF").fontSize(20).text("College Billing System", left, 28, { width: right - left });
+    doc
+      .fillColor("#BFD3FF")
+      .fontSize(11)
+      .text(kind === "balance" ? "Balance Due Receipt" : "Payment Summary Receipt", left, 56, {
+        width: right - left
+      });
+
+    doc
+      .fillColor("#E5E7EB")
+      .fontSize(10)
+      .text(`Generated: ${generatedOn.toLocaleString()}`, left, 78, { width: right - left });
+
+    doc
+      .fillColor("#E5E7EB")
+      .fontSize(10)
+      .text(`Receipt Key: ${receiptKey}`, left, 92, { width: right - left });
+
+    let y = 130;
+
+    const drawSectionTitle = (title) => {
+      doc.fillColor("#0F172A").fontSize(13).text(title, left, y);
+      y += 8;
+      doc.moveTo(left, y).lineTo(right, y).lineWidth(1).strokeColor("#E2E8F0").stroke();
+      y += 12;
+    };
+
+    const drawRow = (label, value) => {
+      doc.fillColor("#334155").fontSize(10).text(label, left, y, { width: 170 });
+      doc
+        .fillColor("#0F172A")
+        .fontSize(11)
+        .text(String(value ?? "-"), left + 180, y, { width: right - (left + 180) });
+      y += 18;
+    };
+
+    const drawMoneyRow = (label, value) => drawRow(label, money(value));
+
+    drawSectionTitle("Student Details");
+    drawRow("College Code", data.collegeKey || "default");
+    drawRow("PIN", data.pin);
+    drawRow("Name", data.name);
+    drawRow("Course", data.course);
+    drawRow("Phone", data.phone || "-");
+
+    y += 8;
+    drawSectionTitle("Fee Summary");
+
+    // Summary card background
+    const cardY = y - 2;
+    const cardHeight = 110;
+    doc.save();
+    doc.roundedRect(left, cardY, right - left, cardHeight, 10).fill("#F8FAFC");
+    doc.restore();
+
+    y += 8;
+    drawMoneyRow("College Total Fee", data.collegeTotalFee);
+    drawMoneyRow("College Paid", data.collegePaid);
+    drawMoneyRow("College Balance", data.collegeBalance);
+    drawMoneyRow("Hostel Charged", data.hostelCharged);
+    drawMoneyRow("Hostel Paid", data.hostelPaid);
+    drawMoneyRow("Hostel Balance", data.hostelBalance);
+
+    y += 10;
+    doc.moveTo(left, y).lineTo(right, y).lineWidth(1).strokeColor("#E2E8F0").stroke();
+    y += 12;
+
+    doc.fillColor("#0F172A").fontSize(13).text("Total Due", left, y);
+    doc.fillColor("#0F172A").fontSize(13).text(money(totalBalance), left, y, { width: right - left, align: "right" });
+    y += 20;
+
+    doc.fillColor("#475569").fontSize(10);
     if (kind === "balance") {
-      doc.fontSize(14).text(`Total Due: ${money(totalBalance)}`);
-      doc.moveDown(0.5);
-      doc.fontSize(11).fillColor("#333").text(
-        "Please pay the remaining balance. If you have already paid, contact the office for verification."
-      );
+      doc.text("Please pay the remaining balance at the college office.", left, y, { width: right - left });
     } else {
-      doc.fontSize(11).fillColor("#333").text(
-        "This is a summary receipt. For detailed entries, refer to the system records."
-      );
+      doc.text("Thank you. This receipt was generated by the College Billing System.", left, y, { width: right - left });
     }
+
+    // Footer
+    doc
+      .fillColor("#94A3B8")
+      .fontSize(9)
+      .text("This document is computer-generated and does not require a signature.", left, pageHeight - 60, {
+        width: right - left,
+        align: "center"
+      });
 
     doc.end();
   } catch (error) {
