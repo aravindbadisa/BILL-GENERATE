@@ -1250,6 +1250,7 @@ export default function App() {
                 </p>
               ) : receiptData ? (
                 <div className="receipt" style={{ marginTop: 10 }}>
+                  <p><strong>College:</strong> {(receiptData.collegeKey || "default")} - {(receiptData.collegeName || "Unknown College")}</p>
                   <p><strong>PIN:</strong> {receiptData.pin}</p>
                   <p><strong>Name:</strong> {receiptData.name}</p>
                   <p><strong>Course:</strong> {receiptData.course}</p>
@@ -1441,6 +1442,7 @@ export default function App() {
           </div>
           {receiptData && (
             <div className="receipt">
+              <p><strong>College:</strong> {(receiptData.collegeKey || "default")} - {(receiptData.collegeName || "Unknown College")}</p>
               <p><strong>Name:</strong> {receiptData.name}</p>
               <p><strong>Course:</strong> {receiptData.course}</p>
               <p><strong>Phone:</strong> {receiptData.phone || "-"}</p>

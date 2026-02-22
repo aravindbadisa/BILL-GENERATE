@@ -10,6 +10,7 @@ const path = require("path");
 const crypto = require("crypto");
 const PDFDocument = require("pdfkit");
 const { signToken, authRequired, roleRequired, anyRoleRequired } = require("./auth");
+const collegeNames = require("./collegeNames.json");
 const User = require("./models/User");
 const Student = require("./models/Student");
 const CollegePayment = require("./models/CollegePayment");
@@ -275,6 +276,12 @@ const receiptKeyForSnapshot = (snapshot) => {
   ].join("|");
   const hex = crypto.createHmac("sha256", secret).update(payload).digest("hex").toUpperCase();
   return `RCP-${hex.slice(0, 16)}`;
+};
+
+const getCollegeName = (collegeKeyRaw) => {
+  const code = normalizeCollegeKey(collegeKeyRaw);
+  if (code === "default") return "Default College";
+  return collegeNames?.[code] || "Unknown College";
 };
 
 app.get("/api/health", (req, res) => {
@@ -594,9 +601,11 @@ app.get("/api/receipt/:pin", authRequired, anyRoleRequired(BILLING_ROLES), async
     const data = await computeStudentBalances(collegeKey, req.params.pin);
     if (!data) return res.status(404).json({ message: "Student not found" });
 
+    const collegeName = getCollegeName(data.collegeKey);
     res.json({
       generatedOn: new Date().toISOString(),
       receiptKey: receiptKeyForSnapshot(data),
+      collegeName,
       ...data
     });
   } catch (error) {
@@ -617,6 +626,7 @@ app.get("/api/receipt/:pin/pdf", authRequired, anyRoleRequired(BILLING_ROLES), a
 
     const generatedOn = new Date();
     const receiptKey = receiptKeyForSnapshot(data);
+    const collegeName = getCollegeName(data.collegeKey);
     const totalBalance = toNumber(data.collegeBalance) + toNumber(data.hostelBalance);
     const kindRaw = String(req.query.kind || "").toLowerCase().trim();
     const kind =
@@ -682,7 +692,7 @@ app.get("/api/receipt/:pin/pdf", authRequired, anyRoleRequired(BILLING_ROLES), a
     const drawMoneyRow = (label, value) => drawRow(label, money(value));
 
     drawSectionTitle("Student Details");
-    drawRow("College Code", data.collegeKey || "default");
+    drawRow("College", `${data.collegeKey || "default"} - ${collegeName}`);
     drawRow("PIN", data.pin);
     drawRow("Name", data.name);
     drawRow("Course", data.course);
