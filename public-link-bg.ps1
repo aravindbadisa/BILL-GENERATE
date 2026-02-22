@@ -7,7 +7,9 @@ $toolsDir = Join-Path $repoRoot "tools"
 $cloudflaredExe = Join-Path $toolsDir "cloudflared.exe"
 $runtimeDir = Join-Path $repoRoot ".runtime"
 $backendLog = Join-Path $runtimeDir "backend.log"
+$backendErr = Join-Path $runtimeDir "backend.err.log"
 $tunnelLog = Join-Path $runtimeDir "tunnel.log"
+$tunnelErr = Join-Path $runtimeDir "tunnel.err.log"
 
 New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
 New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
@@ -50,14 +52,16 @@ try {
 Write-Host "Starting backend (background)..." -ForegroundColor Green
 Set-Location $backendDir
 if (Test-Path $backendLog) { Remove-Item $backendLog -Force }
-$backendProc = Start-Process -PassThru -NoNewWindow -FilePath "npm" -ArgumentList @("start") -RedirectStandardOutput $backendLog -RedirectStandardError $backendLog
+if (Test-Path $backendErr) { Remove-Item $backendErr -Force }
+$backendProc = Start-Process -PassThru -NoNewWindow -FilePath "npm" -ArgumentList @("start") -RedirectStandardOutput $backendLog -RedirectStandardError $backendErr
 
 Start-Sleep -Seconds 2
 
 Write-Host "Starting Cloudflare quick tunnel (background)..." -ForegroundColor Green
 Set-Location $repoRoot
 if (Test-Path $tunnelLog) { Remove-Item $tunnelLog -Force }
-$tunnelProc = Start-Process -PassThru -NoNewWindow -FilePath $cloudflaredExe -ArgumentList @("tunnel", "--url", "http://localhost:5000", "--no-autoupdate") -RedirectStandardOutput $tunnelLog -RedirectStandardError $tunnelLog
+if (Test-Path $tunnelErr) { Remove-Item $tunnelErr -Force }
+$tunnelProc = Start-Process -PassThru -NoNewWindow -FilePath $cloudflaredExe -ArgumentList @("tunnel", "--url", "http://localhost:5000", "--no-autoupdate") -RedirectStandardOutput $tunnelLog -RedirectStandardError $tunnelErr
 
 Write-Host ""
 Write-Host "Waiting for public URL..." -ForegroundColor Cyan
@@ -87,8 +91,9 @@ if (-not $publicUrl) {
 
 Write-Host ""
 Write-Host "Backend log: $backendLog" -ForegroundColor Gray
+Write-Host "Backend err: $backendErr" -ForegroundColor Gray
 Write-Host "Tunnel log:  $tunnelLog" -ForegroundColor Gray
+Write-Host "Tunnel err:  $tunnelErr" -ForegroundColor Gray
 Write-Host ""
 Write-Host "To stop:" -ForegroundColor Yellow
 Write-Host "  Stop-Process -Id $($backendProc.Id),$($tunnelProc.Id) -Force" -ForegroundColor Gray
-
