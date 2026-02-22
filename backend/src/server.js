@@ -7,6 +7,7 @@ const multer = require("multer");
 const XLSX = require("xlsx");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const PDFDocument = require("pdfkit");
 const { signToken, authRequired, roleRequired, anyRoleRequired } = require("./auth");
 const User = require("./models/User");
@@ -109,6 +110,7 @@ const sanitizeUser = (user) => ({
   email: user.email,
   name: user.name,
   role: user.role,
+  mustChangePassword: Boolean(user.mustChangePassword),
   active: user.active
 });
 
@@ -240,6 +242,25 @@ app.get("/api/auth/me", authRequired, async (req, res) => {
     res.json({ user: sanitizeUser(req.user) });
   } catch (error) {
     res.status(500).json({ message: "Failed to load user" });
+  }
+});
+
+app.post("/api/auth/change-password", authRequired, async (req, res) => {
+  try {
+    const { newPassword } = req.body || {};
+    const pw = String(newPassword || "");
+    if (pw.length < 8) {
+      return res.status(400).json({ message: "newPassword must be at least 8 characters" });
+    }
+
+    req.user.passwordHash = await bcrypt.hash(pw, 10);
+    req.user.mustChangePassword = false;
+    await req.user.save();
+
+    const token = signToken(req.user);
+    res.json({ token, user: sanitizeUser(req.user) });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to change password" });
   }
 });
 
@@ -570,8 +591,8 @@ app.get("/api/admin/users", authRequired, roleRequired("admin"), async (req, res
 app.post("/api/admin/users", authRequired, roleRequired("admin"), async (req, res) => {
   try {
     const { email, name, role, password, active, collegeKey } = req.body || {};
-    if (!email || !name || !role || !password) {
-      return res.status(400).json({ message: "email, name, role, password are required" });
+    if (!email || !name || !role) {
+      return res.status(400).json({ message: "email, name, role are required" });
     }
     const finalRole = normalizeRole(role);
     if (!USER_ROLES.includes(finalRole)) {
@@ -580,7 +601,6 @@ app.post("/api/admin/users", authRequired, roleRequired("admin"), async (req, re
         .json({ message: "role must be admin, principal, accountant, or staff" });
     }
 
-    const passwordHash = await bcrypt.hash(String(password), 10);
     const finalCollegeKey = normalizeCollegeKey(collegeKey);
 
     if (finalRole === "principal") {
@@ -594,19 +614,38 @@ app.post("/api/admin/users", authRequired, roleRequired("admin"), async (req, re
       }
     }
 
+    const emailFinal = String(email).toLowerCase().trim();
+    const existing = await User.findOne({ email: emailFinal });
+
+    const passwordStr = String(password || "").trim();
+    let temporaryPassword = null;
+
+    const update = {
+      collegeKey: finalCollegeKey,
+      email: emailFinal,
+      name: String(name).trim(),
+      role: finalRole,
+      active: active !== false
+    };
+
+    if (passwordStr) {
+      update.passwordHash = await bcrypt.hash(passwordStr, 10);
+      update.mustChangePassword = false;
+    } else if (!existing) {
+      if (finalRole === "admin") {
+        return res.status(400).json({ message: "password is required for admin user" });
+      }
+      temporaryPassword = crypto.randomBytes(9).toString("base64url"); // ~12 chars
+      update.passwordHash = await bcrypt.hash(temporaryPassword, 10);
+      update.mustChangePassword = true;
+    }
+
     const user = await User.findOneAndUpdate(
-      { email: String(email).toLowerCase().trim() },
-      {
-        collegeKey: finalCollegeKey,
-        email: String(email).toLowerCase().trim(),
-        name: String(name).trim(),
-        role: finalRole,
-        passwordHash,
-        active: active !== false
-      },
+      { email: emailFinal },
+      update,
       { upsert: true, new: true, runValidators: true }
     );
-    res.status(201).json(sanitizeUser(user));
+    res.status(201).json({ user: sanitizeUser(user), temporaryPassword });
   } catch (error) {
     res.status(500).json({ message: "Failed to save user" });
   }

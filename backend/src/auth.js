@@ -33,6 +33,15 @@ const authRequired = async (req, res, next) => {
     const user = await User.findById(payload.sub);
     if (!user || !user.active) return res.status(401).json({ message: "Unauthorized" });
 
+    const allowPasswordSetup =
+      req.path === "/api/auth/me" || req.path === "/api/auth/change-password";
+    if (user.mustChangePassword && !allowPasswordSetup) {
+      return res.status(403).json({
+        message: "Set your password first",
+        code: "PASSWORD_CHANGE_REQUIRED"
+      });
+    }
+
     req.auth = payload;
     req.user = user;
     next();

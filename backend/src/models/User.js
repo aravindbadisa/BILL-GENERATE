@@ -12,6 +12,7 @@ const userSchema = new mongoose.Schema(
       default: "staff"
     },
     passwordHash: { type: String, required: true },
+    mustChangePassword: { type: Boolean, default: false },
     active: { type: Boolean, default: true }
   },
   { timestamps: true }

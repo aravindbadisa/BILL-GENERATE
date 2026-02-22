@@ -22,6 +22,7 @@ export default function App() {
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || "");
   const [me, setMe] = useState(null);
   const [loginForm, setLoginForm] = useState(initialLogin);
+  const [pwForm, setPwForm] = useState({ newPassword: "", confirmPassword: "" });
 
   const [students, setStudents] = useState([]);
   const [dashboard, setDashboard] = useState([]);
@@ -241,6 +242,28 @@ export default function App() {
     }
   };
 
+  const changePassword = async (e) => {
+    e.preventDefault();
+    setMessage("");
+    setError("");
+    try {
+      if (!pwForm.newPassword || pwForm.newPassword.length < 8) {
+        throw new Error("Password must be at least 8 characters");
+      }
+      if (pwForm.newPassword !== pwForm.confirmPassword) {
+        throw new Error("Passwords do not match");
+      }
+      const data = await callApi("/api/auth/change-password", "POST", { newPassword: pwForm.newPassword });
+      localStorage.setItem(TOKEN_KEY, data.token);
+      setToken(data.token);
+      setMe(data.user);
+      setPwForm({ newPassword: "", confirmPassword: "" });
+      setMessage("Password updated.");
+    } catch (e2) {
+      setError(e2.message);
+    }
+  };
+
   const logout = () => {
     setMe(null);
     setToken("");
@@ -248,7 +271,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (me) loadDashboard();
+    if (me && !me.mustChangePassword) loadDashboard();
   }, [me]);
 
   // Admin state
@@ -300,8 +323,12 @@ export default function App() {
         password: createUserForm.password,
         active: String(createUserForm.active).toLowerCase() !== "false"
       };
-      await callApi("/api/admin/users", "POST", payload);
-      setMessage("User saved.");
+      if (String(payload.role).toLowerCase() === "admin" && !String(payload.password || "").trim()) {
+        throw new Error("Password is required for admin user");
+      }
+      const result = await callApi("/api/admin/users", "POST", payload);
+      const temp = result?.temporaryPassword ? ` Temporary password: ${result.temporaryPassword}` : "";
+      setMessage(`User saved.${temp}`);
       setCreateUserForm(initialCreateUser);
       await Promise.all([loadUsers(), loadColleges()]);
     } catch (e2) {
@@ -401,6 +428,54 @@ export default function App() {
     );
   }
 
+  if (me.mustChangePassword) {
+    return (
+      <div className="page">
+        <header className="hero">
+          <h1>College Billing System</h1>
+          <p>Password setup required</p>
+          <div className="topbar">
+            <span className="badge">
+              {me.name} ({me.role})
+            </span>
+            <button type="button" className="secondary" onClick={logout}>
+              Logout
+            </button>
+          </div>
+        </header>
+
+        {message && <p className="success">{message}</p>}
+        {error && <p className="error">{error}</p>}
+
+        <section className="card">
+          <h2>Set New Password</h2>
+          <form onSubmit={changePassword}>
+            <input
+              name="newPassword"
+              type="password"
+              placeholder="New password (min 8 chars)"
+              value={pwForm.newPassword}
+              onChange={(e) => setPwForm((p) => ({ ...p, newPassword: e.target.value }))}
+              required
+            />
+            <input
+              name="confirmPassword"
+              type="password"
+              placeholder="Confirm password"
+              value={pwForm.confirmPassword}
+              onChange={(e) => setPwForm((p) => ({ ...p, confirmPassword: e.target.value }))}
+              required
+            />
+            <button type="submit">Save Password</button>
+          </form>
+          <p className="hint">
+            This account was created by admin. Set your own password to continue.
+          </p>
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="page">
       <header className="hero">
@@ -439,13 +514,22 @@ export default function App() {
                 <option value="principal">principal</option>
                 <option value="admin">admin</option>
               </select>
-              <input name="password" type="password" placeholder="Password" value={createUserForm.password} onChange={handleInput(setCreateUserForm)} required />
+              <input
+                name="password"
+                type="password"
+                placeholder="Password (leave blank to auto-generate)"
+                value={createUserForm.password}
+                onChange={handleInput(setCreateUserForm)}
+              />
               <select name="active" value={createUserForm.active} onChange={handleInput(setCreateUserForm)}>
                 <option value="true">active</option>
                 <option value="false">inactive</option>
               </select>
               <button type="submit">Save User</button>
             </form>
+            <p className="hint">
+              For `principal/accountant/staff`, you can leave password blank. Admin will get a temporary password to share, and user must set a new password at first login.
+            </p>
           </div>
 
           <div>
