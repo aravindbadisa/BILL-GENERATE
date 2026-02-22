@@ -59,6 +59,7 @@ export default function App() {
   const [receiptPin, setReceiptPin] = useState("");
   const [receiptData, setReceiptData] = useState(null);
   const [receiptPhone, setReceiptPhone] = useState("");
+  const [receiptLoading, setReceiptLoading] = useState(false);
   const [pinSearch, setPinSearch] = useState("");
 
   const readResponseBody = async (res) => {
@@ -205,12 +206,12 @@ export default function App() {
     }
   };
 
-  const fetchReceiptForPin = async (pinRaw) => {
+  const loadReceiptForPin = async (pinRaw) => {
     const pin = String(pinRaw || "").trim();
     if (!pin) return;
-    setReceiptPin(pin);
     setMessage("");
     setError("");
+    setReceiptLoading(true);
     setReceiptData(null);
     try {
       const data = await callApi(`/api/receipt/${encodeURIComponent(pin)}`);
@@ -218,10 +219,12 @@ export default function App() {
       setReceiptPhone(data.phone || "");
     } catch (e) {
       setError(e.message);
+    } finally {
+      setReceiptLoading(false);
     }
   };
 
-  const fetchReceipt = async () => fetchReceiptForPin(receiptPin);
+  const fetchReceipt = async () => loadReceiptForPin(receiptPin);
 
   const clearSelectedStudent = () => {
     setReceiptPin("");
@@ -231,6 +234,24 @@ export default function App() {
     setAttendanceForm(initialAttendance);
     setHostelPaymentForm(initialHostelPayment);
   };
+
+  useEffect(() => {
+    const pin = String(receiptPin || "").trim();
+    if (!pin) {
+      setReceiptData(null);
+      setReceiptPhone("");
+      setReceiptLoading(false);
+      setCollegePaymentForm(initialCollegePayment);
+      setAttendanceForm(initialAttendance);
+      setHostelPaymentForm(initialHostelPayment);
+      return;
+    }
+
+    const t = setTimeout(() => {
+      loadReceiptForPin(pin);
+    }, 350);
+    return () => clearTimeout(t);
+  }, [receiptPin]);
 
   const showHostel =
     Boolean(receiptData) &&
@@ -248,7 +269,7 @@ export default function App() {
     setHostelPaymentForm((p) => ({ ...p, pin: receiptData.pin }));
   }, [receiptData?.pin]);
 
-  const downloadReceiptPdf = async (kind = "auto") => {
+      const downloadReceiptPdf = async (kind = "auto") => {
     setMessage("");
     setError("");
     try {
@@ -1174,37 +1195,42 @@ export default function App() {
       {!isAdmin && (
         <>
         <section className="card grid">
-        <div>
-          <h2>Student Search</h2>
-          <div className="inline">
-            <input value={receiptPin} onChange={(e) => setReceiptPin(e.target.value)} placeholder="Enter PIN" />
-            <button type="button" onClick={fetchReceipt} disabled={!receiptPin.trim()}>
-              Load
-            </button>
-            <button type="button" className="secondary" onClick={clearSelectedStudent}>
-              Clear
-            </button>
-          </div>
+            <div>
+              <h2>Student Search</h2>
+              <div className="inline">
+                <input
+                  value={receiptPin}
+                  onChange={(e) => setReceiptPin(e.target.value)}
+                  placeholder="Enter PIN (auto loads)"
+                />
+                <button type="button" className="secondary" onClick={clearSelectedStudent}>
+                  Clear
+                </button>
+              </div>
 
-          {receiptData ? (
-            <div className="receipt" style={{ marginTop: 10 }}>
-              <p><strong>PIN:</strong> {receiptData.pin}</p>
-              <p><strong>Name:</strong> {receiptData.name}</p>
-              <p><strong>Course:</strong> {receiptData.course}</p>
-              <p><strong>Phone:</strong> {receiptData.phone || "-"}</p>
-              <p><strong>College Balance:</strong> {receiptData.collegeBalance}</p>
-              {showHostel ? (
-                <p><strong>Hostel Balance:</strong> {receiptData.hostelBalance}</p>
+              {receiptLoading ? (
+                <p className="hint" style={{ marginTop: 10 }}>
+                  Loading student...
+                </p>
+              ) : receiptData ? (
+                <div className="receipt" style={{ marginTop: 10 }}>
+                  <p><strong>PIN:</strong> {receiptData.pin}</p>
+                  <p><strong>Name:</strong> {receiptData.name}</p>
+                  <p><strong>Course:</strong> {receiptData.course}</p>
+                  <p><strong>Phone:</strong> {receiptData.phone || "-"}</p>
+                  <p><strong>College Balance:</strong> {receiptData.collegeBalance}</p>
+                  {showHostel ? (
+                    <p><strong>Hostel Balance:</strong> {receiptData.hostelBalance}</p>
+                  ) : (
+                    <p className="hint">This student is college-only (no hostel).</p>
+                  )}
+                </div>
               ) : (
-                <p className="hint">This student is college-only (no hostel).</p>
+                <p className="hint" style={{ marginTop: 10 }}>
+                  Enter a PIN to load student details + remaining balance. If PIN is empty, all students are shown below.
+                </p>
               )}
             </div>
-          ) : (
-            <p className="hint" style={{ marginTop: 10 }}>
-              Enter a PIN to load student details + remaining balance. If PIN is empty, all students are shown below.
-            </p>
-          )}
-        </div>
 
         <div>
           <h2>College Payment</h2>
@@ -1386,25 +1412,25 @@ export default function App() {
                 </tr>
               </thead>
               <tbody>
-                {dashboard
-                  .filter((item) => {
-                    const q = String(pinSearch || "").trim();
-                    if (!q) return true;
-                    return String(item.pin || "").includes(q);
-                  })
-                  .map((item) => (
-                  <tr key={item.pin} style={{ cursor: "pointer" }} onClick={() => fetchReceiptForPin(item.pin)}>
-                    <td>{item.pin}</td>
-                    <td>{item.name}</td>
-                    <td>{item.course}</td>
-                    <td>{item.collegeTotalFee}</td>
-                    <td>{item.collegePaid}</td>
-                    <td>{item.collegeBalance}</td>
-                    <td>{item.hostelCharged}</td>
-                    <td>{item.hostelPaid}</td>
-                    <td>{item.hostelBalance}</td>
-                  </tr>
-                ))}
+                    {dashboard
+                      .filter((item) => {
+                        const q = String(pinSearch || "").trim();
+                        if (!q) return true;
+                        return String(item.pin || "").includes(q);
+                      })
+                      .map((item) => (
+                        <tr key={item.pin} style={{ cursor: "pointer" }} onClick={() => setReceiptPin(item.pin)}>
+                          <td>{item.pin}</td>
+                          <td>{item.name}</td>
+                          <td>{item.course}</td>
+                          <td>{item.collegeTotalFee}</td>
+                          <td>{item.collegePaid}</td>
+                          <td>{item.collegeBalance}</td>
+                          <td>{item.hostelCharged}</td>
+                          <td>{item.hostelPaid}</td>
+                          <td>{item.hostelBalance}</td>
+                        </tr>
+                      ))}
               </tbody>
             </table>
           </div>
