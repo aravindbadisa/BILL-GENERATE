@@ -273,6 +273,27 @@ export default function App() {
         Number(receiptData.hostelBalance || 0) > 0
     );
 
+  const [studentHostelFlag, setStudentHostelFlag] = useState(false);
+
+  useEffect(() => {
+    setStudentHostelFlag(Boolean(receiptData?.hasHostel));
+  }, [receiptData?.pin, receiptData?.hasHostel]);
+
+  const updateStudentHostelFlag = async () => {
+    setMessage("");
+    setError("");
+    try {
+      const pin = String(receiptData?.pin || "").trim();
+      if (!pin) throw new Error("Select a student PIN first");
+      await callApi(`/api/students/${encodeURIComponent(pin)}/hostel`, "PATCH", { hasHostel: studentHostelFlag });
+      setMessage("Updated hostel status.");
+      await loadReceiptForPin(pin);
+      await loadDashboard();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
   useEffect(() => {
     if (!receiptData?.pin) return;
     setCollegePaymentForm((p) => ({ ...p, pin: receiptData.pin }));
@@ -1234,6 +1255,19 @@ export default function App() {
                   <p><strong>Course:</strong> {receiptData.course}</p>
                   <p><strong>Phone:</strong> {receiptData.phone || "-"}</p>
                   <p><strong>College Balance:</strong> {receiptData.collegeBalance}</p>
+                  <div className="inline" style={{ marginTop: 8 }}>
+                    <label className="inline" style={{ gap: 8 }}>
+                      <input
+                        type="checkbox"
+                        checked={studentHostelFlag}
+                        onChange={(e) => setStudentHostelFlag(e.target.checked)}
+                      />
+                      Hostel student
+                    </label>
+                    <button type="button" className="secondary" onClick={updateStudentHostelFlag}>
+                      Update
+                    </button>
+                  </div>
                   {showHostel ? (
                     <p><strong>Hostel Balance:</strong> {receiptData.hostelBalance}</p>
                   ) : (
@@ -1274,7 +1308,6 @@ export default function App() {
         </div>
       </section>
 
-      {showHostel && (
       <section className="card grid">
         <div>
           <h2>Hostel Fee Master</h2>
@@ -1284,7 +1317,13 @@ export default function App() {
               submitForm("/api/hostel-fees", hostelFeeForm, () => setHostelFeeForm(initialHostelFee));
             }}
           >
-            <input name="month" placeholder="Month (e.g. Jan-2026)" value={hostelFeeForm.month} onChange={handleInput(setHostelFeeForm)} required />
+            <input
+              name="month"
+              placeholder="Month (e.g. Jan-2026)"
+              value={hostelFeeForm.month}
+              onChange={handleInput(setHostelFeeForm)}
+              required
+            />
             <input
               name="monthlyFee"
               type="number"
@@ -1296,44 +1335,58 @@ export default function App() {
             />
             <button type="submit">Save Month Fee</button>
           </form>
+          <p className="hint" style={{ marginTop: 8 }}>
+            Set hostel monthly fee first. Attendance + Hostel Payment are available only for hostel students.
+          </p>
         </div>
 
         <div>
           <h2>Hostel Attendance</h2>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              submitForm("/api/hostel-attendance", attendanceForm, () =>
-                setAttendanceForm((p) => ({ ...initialAttendance, pin: receiptData?.pin || "" }))
-              );
-            }}
-          >
-            <input name="pin" placeholder="PIN" value={attendanceForm.pin} readOnly />
-            <input name="month" placeholder="Month (same as fee master)" value={attendanceForm.month} onChange={handleInput(setAttendanceForm)} required />
-            <input
-              name="totalDays"
-              type="number"
-              min="1"
-              placeholder="Total Days in Month"
-              value={attendanceForm.totalDays}
-              onChange={handleInput(setAttendanceForm)}
-              required
-            />
-            <input
-              name="daysStayed"
-              type="number"
-              min="0"
-              placeholder="Days Stayed"
-              value={attendanceForm.daysStayed}
-              onChange={handleInput(setAttendanceForm)}
-              required
-            />
-            <button type="submit" disabled={!receiptData?.pin}>Add Attendance</button>
-            {!receiptData?.pin && <p className="hint">Select a student PIN above first.</p>}
-          </form>
+          {!showHostel ? (
+            <p className="hint" style={{ marginTop: 8 }}>
+              Select a hostel student (enable “Hostel student” above) to add attendance.
+            </p>
+          ) : (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                submitForm("/api/hostel-attendance", attendanceForm, () =>
+                  setAttendanceForm((p) => ({ ...initialAttendance, pin: receiptData?.pin || "" }))
+                );
+              }}
+            >
+              <input name="pin" placeholder="PIN" value={attendanceForm.pin} readOnly />
+              <input
+                name="month"
+                placeholder="Month (same as fee master)"
+                value={attendanceForm.month}
+                onChange={handleInput(setAttendanceForm)}
+                required
+              />
+              <input
+                name="totalDays"
+                type="number"
+                min="1"
+                placeholder="Total Days in Month"
+                value={attendanceForm.totalDays}
+                onChange={handleInput(setAttendanceForm)}
+                required
+              />
+              <input
+                name="daysStayed"
+                type="number"
+                min="0"
+                placeholder="Days Stayed"
+                value={attendanceForm.daysStayed}
+                onChange={handleInput(setAttendanceForm)}
+                required
+              />
+              <button type="submit" disabled={!receiptData?.pin}>Add Attendance</button>
+              {!receiptData?.pin && <p className="hint">Select a student PIN above first.</p>}
+            </form>
+          )}
         </div>
       </section>
-      )}
 
       <section className="card grid">
         {showHostel && (

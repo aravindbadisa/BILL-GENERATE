@@ -338,7 +338,9 @@ app.post("/api/students", authRequired, anyRoleRequired(BILLING_ROLES), async (r
       phone: String(phone || "").trim(),
       collegeTotalFee: toNumber(collegeTotalFee)
     };
-    if (req.user.role === "admin") update.hasHostel = Boolean(hasHostel);
+    // Allow all billing roles to set hostel flag for students in their own college.
+    // Admin can also set it (and can target other colleges via collegeKey).
+    if (hasHostel !== undefined) update.hasHostel = Boolean(hasHostel);
 
     const student = await Student.findOneAndUpdate({ collegeKey, pin }, update, {
       upsert: true,
@@ -348,6 +350,31 @@ app.post("/api/students", authRequired, anyRoleRequired(BILLING_ROLES), async (r
     res.status(201).json(student);
   } catch (error) {
     res.status(500).json({ message: "Failed to save student" });
+  }
+});
+
+app.patch("/api/students/:pin/hostel", authRequired, anyRoleRequired(BILLING_ROLES), async (req, res) => {
+  try {
+    const pin = String(req.params.pin || "").trim();
+    if (!pin) return res.status(400).json({ message: "pin is required" });
+
+    const collegeKey =
+      req.user.role === "admin"
+        ? normalizeCollegeKey(req.body?.collegeKey || req.query?.collegeKey)
+        : normalizeCollegeKey(req.user.collegeKey);
+
+    const hasHostel = Boolean(req.body?.hasHostel);
+
+    const student = await Student.findOneAndUpdate(
+      { ...collegeMatch(collegeKey), pin },
+      { $set: { hasHostel } },
+      { new: true }
+    );
+
+    if (!student) return res.status(404).json({ message: "Student not found" });
+    res.json(student);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to update hostel status" });
   }
 });
 
