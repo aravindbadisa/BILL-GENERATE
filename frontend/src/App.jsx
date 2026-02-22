@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { branches, colleges as collegesMaster, normalizeCollegeCode } from "./data/collegeData";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000";
 const TOKEN_KEY = "billing_token";
@@ -154,6 +155,14 @@ export default function App() {
 
   const handleInput = (setter) => (e) => {
     setter((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  };
+
+  const normalizeCollegeKeyField = (setter, fieldName) => () => {
+    setter((prev) => {
+      const next = { ...prev };
+      next[fieldName] = normalizeCollegeCode(next[fieldName]);
+      return next;
+    });
   };
 
   const submitForm = async (path, body, reset) => {
@@ -436,6 +445,19 @@ export default function App() {
   if (!me) {
     return (
       <div className="page">
+        <datalist id="collegeOptions">
+          <option value="default">default</option>
+          {collegesMaster.map((c) => (
+            <option key={c.code} value={c.code}>
+              {c.code} - {c.name}
+            </option>
+          ))}
+        </datalist>
+        <datalist id="courseOptions">
+          {branches.map((b) => (
+            <option key={b} value={b} />
+          ))}
+        </datalist>
         <header className="hero">
           <h1>College Billing System</h1>
           <p>Login required</p>
@@ -473,6 +495,19 @@ export default function App() {
   if (me.mustChangePassword) {
     return (
       <div className="page">
+        <datalist id="collegeOptions">
+          <option value="default">default</option>
+          {collegesMaster.map((c) => (
+            <option key={c.code} value={c.code}>
+              {c.code} - {c.name}
+            </option>
+          ))}
+        </datalist>
+        <datalist id="courseOptions">
+          {branches.map((b) => (
+            <option key={b} value={b} />
+          ))}
+        </datalist>
         <header className="hero">
           <h1>College Billing System</h1>
           <p>Password setup required</p>
@@ -520,6 +555,19 @@ export default function App() {
 
   return (
     <div className="page">
+      <datalist id="collegeOptions">
+        <option value="default">default</option>
+        {collegesMaster.map((c) => (
+          <option key={c.code} value={c.code}>
+            {c.code} - {c.name}
+          </option>
+        ))}
+      </datalist>
+      <datalist id="courseOptions">
+        {branches.map((b) => (
+          <option key={b} value={b} />
+        ))}
+      </datalist>
       <header className="hero">
         <h1>College Billing System</h1>
         <p>Built from your Excel structure: fees, payments, attendance, balances, receipt</p>
@@ -546,6 +594,8 @@ export default function App() {
                 placeholder="College Code (e.g. 008)"
                 value={createUserForm.collegeKey}
                 onChange={handleInput(setCreateUserForm)}
+                onBlur={normalizeCollegeKeyField(setCreateUserForm, "collegeKey")}
+                list="collegeOptions"
                 required
               />
               <input name="email" type="email" placeholder="Email" value={createUserForm.email} onChange={handleInput(setCreateUserForm)} required />
@@ -602,11 +652,20 @@ export default function App() {
                 placeholder="College Code (e.g. 008)"
                 value={adminStudentForm.collegeKey}
                 onChange={handleInput(setAdminStudentForm)}
+                onBlur={normalizeCollegeKeyField(setAdminStudentForm, "collegeKey")}
+                list="collegeOptions"
                 required
               />
               <input name="pin" placeholder="PIN" value={adminStudentForm.pin} onChange={handleInput(setAdminStudentForm)} required />
               <input name="name" placeholder="Name" value={adminStudentForm.name} onChange={handleInput(setAdminStudentForm)} required />
-              <input name="course" placeholder="Course" value={adminStudentForm.course} onChange={handleInput(setAdminStudentForm)} required />
+              <input
+                name="course"
+                placeholder="Course"
+                value={adminStudentForm.course}
+                onChange={handleInput(setAdminStudentForm)}
+                list="courseOptions"
+                required
+              />
               <input name="phone" placeholder="Phone (optional)" value={adminStudentForm.phone} onChange={handleInput(setAdminStudentForm)} />
               <input
                 name="collegeTotalFee"
@@ -735,7 +794,14 @@ export default function App() {
           >
             <input name="pin" placeholder="PIN" value={studentForm.pin} onChange={handleInput(setStudentForm)} required />
             <input name="name" placeholder="Name" value={studentForm.name} onChange={handleInput(setStudentForm)} required />
-            <input name="course" placeholder="Course" value={studentForm.course} onChange={handleInput(setStudentForm)} required />
+            <input
+              name="course"
+              placeholder="Course"
+              value={studentForm.course}
+              onChange={handleInput(setStudentForm)}
+              list="courseOptions"
+              required
+            />
             <input name="phone" placeholder="Phone (optional)" value={studentForm.phone} onChange={handleInput(setStudentForm)} />
             <input
               name="collegeTotalFee"
