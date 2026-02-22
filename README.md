@@ -53,6 +53,11 @@ Requirements:
 - Node.js 20+
 - npm
 
+### One-click (Windows)
+
+- Double-click `run.cmd` (or run `.\run.ps1` in PowerShell).
+- This opens two new PowerShell windows: one for **backend** and one for **frontend**.
+
 ### Backend
 
 ```bash
