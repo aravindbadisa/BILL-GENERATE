@@ -83,21 +83,28 @@ const isLocalDevOrigin = (origin) => {
   return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(value);
 };
 
+// Apply CORS to API routes only.
+// Important: browsers often send an Origin header even for same-origin module scripts/styles when served via tunnels.
+// If we throw on unknown origins, the SPA may fail to load (blank page). Instead:
+// - Always allow same-origin requests.
+// - If origin isn't allowed, disable CORS without throwing (browser will block cross-origin use, but server stays up).
 app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (
-        !origin ||
-        allowedOrigins.length === 0 ||
-        allowedOrigins.includes(origin) ||
-        (process.env.NODE_ENV !== "production" && isLocalDevOrigin(origin))
-      ) {
-        callback(null, true);
-      } else {
-        callback(new Error("CORS not allowed"));
-      }
-    },
-    allowedHeaders: ["Content-Type", "Authorization"]
+  "/api",
+  cors((req, callback) => {
+    const origin = String(req.header("Origin") || "").trim();
+    const host = String(req.header("Host") || "").trim();
+    const proto = String(req.header("X-Forwarded-Proto") || req.protocol || "http").trim();
+
+    const sameOrigin = origin && host && origin === `${proto}://${host}`;
+
+    const allow =
+      !origin ||
+      sameOrigin ||
+      allowedOrigins.length === 0 ||
+      allowedOrigins.includes(origin) ||
+      (process.env.NODE_ENV !== "production" && isLocalDevOrigin(origin));
+
+    callback(null, { origin: allow, allowedHeaders: ["Content-Type", "Authorization"] });
   })
 );
 app.use(express.json());
