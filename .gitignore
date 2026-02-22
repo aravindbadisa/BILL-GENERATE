@@ -6,6 +6,7 @@ frontend/dist/
 .vscode/
 tools/
 .runtime/
+!.runtime/mongo-check.js
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

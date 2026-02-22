@@ -203,12 +203,8 @@ export default function App() {
       await loadDashboard();
 
       // Keep the selected student's balances in sync after saving payments/attendance.
-      if (me?.role && me.role !== "admin") {
-        const pin = String(receiptPin || "").trim();
-        if (pin) {
-          await loadReceiptForPin(pin);
-        }
-      }
+      const pin = String(receiptPin || "").trim();
+      if (pin) await loadReceiptForPin(pin);
     } catch (e) {
       setError(e.message);
     }
@@ -241,6 +237,13 @@ export default function App() {
     setCollegePaymentForm(initialCollegePayment);
     setAttendanceForm(initialAttendance);
     setHostelPaymentForm(initialHostelPayment);
+  };
+
+  const resetBillingState = () => {
+    setStudents([]);
+    setDashboard([]);
+    setPinSearch("");
+    clearSelectedStudent();
   };
 
   useEffect(() => {
@@ -336,6 +339,7 @@ export default function App() {
     setError("");
     try {
       const data = await callApi("/api/auth/login", "POST", loginForm);
+      resetBillingState();
       localStorage.setItem(TOKEN_KEY, data.token);
       setToken(data.token);
       setMe(data.user);
@@ -368,14 +372,17 @@ export default function App() {
   };
 
   const logout = () => {
+    resetBillingState();
     setMe(null);
     setToken("");
     localStorage.removeItem(TOKEN_KEY);
   };
 
   useEffect(() => {
+    // If a different user logs in, clear any previous college data immediately.
+    resetBillingState();
     if (me && !me.mustChangePassword) loadDashboard();
-  }, [me]);
+  }, [me?.id]);
 
   // Admin state
   const [users, setUsers] = useState([]);
