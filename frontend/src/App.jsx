@@ -721,9 +721,7 @@ export default function App() {
             />
             <button type="submit">Login</button>
           </form>
-          <p className="hint">
-            First run: set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in backend `.env` to seed admin.
-          </p>
+          <p className="hint">Use the email provided by your college/admin. If it’s your first login, you may be asked to set a new password.</p>
         </section>
       </div>
     );
