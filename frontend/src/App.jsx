@@ -96,6 +96,19 @@ export default function App() {
     return parsed.value;
   };
 
+  const uploadFileWithFields = async (path, file, fields) => {
+    const headers = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const fd = new FormData();
+    fd.append("file", file);
+    Object.entries(fields || {}).forEach(([k, v]) => fd.append(k, String(v ?? "")));
+    const res = await fetch(`${API_BASE}${path}`, { method: "POST", headers, body: fd });
+    const parsed = await readResponseBody(res);
+    if (!res.ok) throw new Error(errorFromResponse(res, parsed));
+    if (parsed.kind !== "json") throw new Error("Server returned non-JSON response");
+    return parsed.value;
+  };
+
   const uploadFile = async (path, file) => {
     const headers = {};
     if (token) headers.Authorization = `Bearer ${token}`;
@@ -297,8 +310,14 @@ export default function App() {
   const [importFile, setImportFile] = useState(null);
   const [colleges, setColleges] = useState([]);
   const [adminStudentForm, setAdminStudentForm] = useState(initialAdminStudent);
+  const [studentImportFile, setStudentImportFile] = useState(null);
+  const [adminStudentImportCollege, setAdminStudentImportCollege] = useState("");
+  const [myStudentImports, setMyStudentImports] = useState([]);
+  const [adminStudentImports, setAdminStudentImports] = useState([]);
+  const [selectedImport, setSelectedImport] = useState(null);
 
   const isAdmin = me?.role === "admin";
+  const isPrincipal = me?.role === "principal";
 
   const loadUsers = async () => {
     if (!isAdmin) return;
@@ -327,6 +346,123 @@ export default function App() {
   useEffect(() => {
     if (isAdmin) loadColleges();
   }, [isAdmin]);
+
+  const downloadStudentsTemplate = async () => {
+    setMessage("");
+    setError("");
+    try {
+      const headers = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const res = await fetch(`${API_BASE}/api/student-imports/template`, { headers });
+      if (!res.ok) {
+        const parsed = await readResponseBody(res);
+        throw new Error(errorFromResponse(res, parsed));
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "students_template.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e2) {
+      setError(e2.message);
+    }
+  };
+
+  const submitStudentImport = async (e) => {
+    e.preventDefault();
+    setMessage("");
+    setError("");
+    try {
+      if (!studentImportFile) throw new Error("Select a .xlsx or .csv file");
+      if (isAdmin) {
+        if (!adminStudentImportCollege) throw new Error("College Code is required for admin import");
+        const result = await uploadFileWithFields(
+          "/api/student-imports",
+          studentImportFile,
+          { collegeKey: adminStudentImportCollege }
+        );
+        setMessage(
+          `Student import complete for college ${result.collegeKey}. created=${result.result?.created ?? 0} updated=${result.result?.updated ?? 0}`
+        );
+      } else {
+        const result = await uploadFile("/api/student-imports", studentImportFile);
+        setMessage(`Student import submitted. status=${result.status} rows=${result.rows}`);
+      }
+      setStudentImportFile(null);
+      await Promise.all([loadMyStudentImports(), loadAdminStudentImports()]);
+    } catch (e2) {
+      setError(e2.message);
+    }
+  };
+
+  const loadMyStudentImports = async () => {
+    if (!isPrincipal) return;
+    try {
+      const data = await callApi("/api/student-imports/my");
+      setMyStudentImports(data);
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  useEffect(() => {
+    if (isPrincipal) loadMyStudentImports();
+  }, [isPrincipal]);
+
+  const loadAdminStudentImports = async () => {
+    if (!isAdmin) return;
+    try {
+      const data = await callApi("/api/admin/student-imports");
+      setAdminStudentImports(data);
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  useEffect(() => {
+    if (isAdmin) loadAdminStudentImports();
+  }, [isAdmin]);
+
+  const openImportPreview = async (id) => {
+    setMessage("");
+    setError("");
+    try {
+      const data = await callApi(`/api/admin/student-imports/${encodeURIComponent(id)}`);
+      setSelectedImport(data);
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const approveImport = async (id) => {
+    setMessage("");
+    setError("");
+    try {
+      const result = await callApi(`/api/admin/student-imports/${encodeURIComponent(id)}/approve`, "POST", {});
+      setMessage(`Approved import. created=${result.result?.created ?? 0} updated=${result.result?.updated ?? 0}`);
+      setSelectedImport(null);
+      await loadAdminStudentImports();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const rejectImport = async (id) => {
+    setMessage("");
+    setError("");
+    try {
+      await callApi(`/api/admin/student-imports/${encodeURIComponent(id)}/reject`, "POST", {});
+      setMessage("Rejected import.");
+      setSelectedImport(null);
+      await loadAdminStudentImports();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
 
   const createUser = async (e) => {
     e.preventDefault();
@@ -682,6 +818,189 @@ export default function App() {
               Use this when you need to add one student manually (without Excel). Students cannot log in; this is only billing data.
             </p>
           </div>
+        </section>
+      )}
+
+      {!isAdmin && isPrincipal && (
+        <section className="card">
+          <h2>Principal: Submit Students (Excel/CSV)</h2>
+          <div className="inline">
+            <button type="button" className="secondary" onClick={downloadStudentsTemplate}>
+              Download Students Template
+            </button>
+          </div>
+          <form onSubmit={submitStudentImport}>
+            <input
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              onChange={(e) => setStudentImportFile(e.target.files?.[0] || null)}
+              required
+            />
+            <button type="submit">Upload & Submit to Admin</button>
+          </form>
+          <p className="hint">
+            Admin will review and approve. After approval, students will be created in your college database.
+          </p>
+
+          <h3 style={{ marginTop: 14 }}>My Submissions</h3>
+          {myStudentImports.length === 0 ? (
+            <p>No submissions yet.</p>
+          ) : (
+            <div className="tableWrap">
+              <table style={{ minWidth: 760 }}>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>File</th>
+                    <th>Status</th>
+                    <th>Rows</th>
+                    <th>Note</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {myStudentImports.map((r) => (
+                    <tr key={String(r._id)}>
+                      <td>{new Date(r.createdAt).toLocaleString()}</td>
+                      <td>{r.originalName}</td>
+                      <td>
+                        <span className={`statusPill ${r.status}`}>{r.status}</span>
+                      </td>
+                      <td>{(r.rowsCount ?? r.rows?.length) || "-"}</td>
+                      <td>{r.decisionNote || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+
+      {isAdmin && (
+        <section className="card">
+          <h2>Admin: Import Students (Excel/CSV)</h2>
+          <div className="inline">
+            <button type="button" className="secondary" onClick={downloadStudentsTemplate}>
+              Download Students Template
+            </button>
+          </div>
+          <form onSubmit={submitStudentImport}>
+            <input
+              placeholder="College Code (e.g. 008)"
+              value={adminStudentImportCollege}
+              onChange={(e) => setAdminStudentImportCollege(e.target.value)}
+              onBlur={() => setAdminStudentImportCollege(normalizeCollegeCode(adminStudentImportCollege))}
+              list="collegeOptions"
+              required
+            />
+            <input
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              onChange={(e) => setStudentImportFile(e.target.files?.[0] || null)}
+              required
+            />
+            <button type="submit">Upload & Import</button>
+          </form>
+          <p className="hint">Admin imports are auto-approved and directly create/update students.</p>
+        </section>
+      )}
+
+      {isAdmin && (
+        <section className="card">
+          <h2>Admin: Pending Student Imports</h2>
+          {adminStudentImports.length === 0 ? (
+            <p>No imports.</p>
+          ) : (
+            <div className="tableWrap">
+              <table style={{ minWidth: 960 }}>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>College</th>
+                    <th>Uploaded By</th>
+                    <th>File</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {adminStudentImports.map((r) => (
+                    <tr key={String(r._id)}>
+                      <td>{new Date(r.createdAt).toLocaleString()}</td>
+                      <td>{r.collegeKey}</td>
+                      <td>{r.uploadedByEmail}</td>
+                      <td>{r.originalName}</td>
+                      <td>
+                        <span className={`statusPill ${r.status}`}>{r.status}</span>
+                      </td>
+                      <td>
+                        <button type="button" className="secondary" onClick={() => openImportPreview(r._id)}>
+                          View
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {selectedImport && (
+            <div className="receipt" style={{ marginTop: 12 }}>
+              <div className="inline" style={{ alignItems: "center" }}>
+                <strong style={{ flex: 1 }}>
+                  Preview: {selectedImport.originalName} ({selectedImport.collegeKey})
+                </strong>
+                <button type="button" className="secondary" onClick={() => setSelectedImport(null)}>
+                  Close
+                </button>
+              </div>
+              <p className="hint">
+                Showing first {selectedImport.rows?.length || 0} rows (max 50). Status:{" "}
+                <span className={`statusPill ${selectedImport.status}`}>{selectedImport.status}</span>
+              </p>
+
+              {selectedImport.rows?.length ? (
+                <div className="tableWrap">
+                  <table style={{ minWidth: 920 }}>
+                    <thead>
+                      <tr>
+                        <th>PIN</th>
+                        <th>Name</th>
+                        <th>Course</th>
+                        <th>Phone</th>
+                        <th>Total Fee</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedImport.rows.map((row, idx) => (
+                        <tr key={idx}>
+                          <td>{row.pin}</td>
+                          <td>{row.name}</td>
+                          <td>{row.course}</td>
+                          <td>{row.phone || "-"}</td>
+                          <td>{row.collegeTotalFee}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p>No rows.</p>
+              )}
+
+              {selectedImport.status === "pending" && (
+                <div className="inline" style={{ marginTop: 10 }}>
+                  <button type="button" onClick={() => approveImport(selectedImport._id)}>
+                    Approve
+                  </button>
+                  <button type="button" className="secondary" onClick={() => rejectImport(selectedImport._id)}>
+                    Reject
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </section>
       )}
 

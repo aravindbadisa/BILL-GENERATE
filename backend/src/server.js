@@ -884,6 +884,20 @@ app.post("/api/admin/colleges/active", authRequired, roleRequired("admin"), asyn
   }
 });
 
+app.get("/api/student-imports/template", authRequired, anyRoleRequired(["admin", "principal"]), async (req, res) => {
+  try {
+    const csv =
+      "pin,name,course,phone,collegeTotalFee\n" +
+      "220001,Student Name,COMPUTER ENGINEERING,9876543210,12000\n";
+
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", "attachment; filename=\"students_template.csv\"");
+    res.send(csv);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to download template" });
+  }
+});
+
 app.post(
   "/api/student-imports",
   authRequired,
@@ -931,6 +945,7 @@ app.post(
         originalName: req.file.originalname,
         mimeType: req.file.mimetype,
         size: req.file.size,
+        rowsCount: rows.length,
         rows
       });
 

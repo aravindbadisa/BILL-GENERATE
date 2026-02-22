@@ -27,6 +27,7 @@ const studentImportSchema = new mongoose.Schema(
     originalName: { type: String, required: true, trim: true },
     mimeType: { type: String, required: true, trim: true },
     size: { type: Number, required: true, min: 0 },
+    rowsCount: { type: Number, default: 0, min: 0 },
     rows: { type: [studentImportRowSchema], default: [] },
     result: { type: mongoose.Schema.Types.Mixed, default: null },
     decisionNote: { type: String, trim: true, default: "" },
@@ -37,4 +38,3 @@ const studentImportSchema = new mongoose.Schema(
 );
 
 module.exports = mongoose.model("StudentImport", studentImportSchema);
-
