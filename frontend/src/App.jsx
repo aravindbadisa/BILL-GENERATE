@@ -81,6 +81,22 @@ export default function App() {
     return years;
   })();
 
+  const parseMonthYear = (value) => {
+    const raw = String(value || "").trim();
+    const m = raw.match(/^([A-Za-z]{3})-(\d{4})$/);
+    if (!m) return { month: "", year: "" };
+    return { month: m[1], year: m[2] };
+  };
+
+  const setMonthYearField = (setter, field, part, nextValue) => {
+    setter((prev) => {
+      const current = parseMonthYear(prev[field]);
+      const month = part === "month" ? String(nextValue || "") : current.month;
+      const year = part === "year" ? String(nextValue || "") : current.year;
+      return { ...prev, [field]: month && year ? `${month}-${year}` : "" };
+    });
+  };
+
   const readResponseBody = async (res) => {
     const contentType = String(res.headers.get("content-type") || "").toLowerCase();
     if (contentType.includes("application/json")) {
@@ -1394,13 +1410,32 @@ export default function App() {
               submitForm("/api/hostel-fees", hostelFeeForm, () => setHostelFeeForm(initialHostelFee));
             }}
           >
-            <input
-              name="month"
-              placeholder="Month (e.g. Jan-2026)"
-              value={hostelFeeForm.month}
-              onChange={handleInput(setHostelFeeForm)}
-              required
-            />
+            <div className="grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
+              <div>
+                <label className="hint" style={{ marginTop: 0 }}>Month</label>
+                <select
+                  value={parseMonthYear(hostelFeeForm.month).month}
+                  onChange={(e) => setMonthYearField(setHostelFeeForm, "month", "month", e.target.value)}
+                >
+                  <option value="">Select month</option>
+                  {HOSTEL_MONTHS.map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="hint" style={{ marginTop: 0 }}>Year</label>
+                <select
+                  value={parseMonthYear(hostelFeeForm.month).year}
+                  onChange={(e) => setMonthYearField(setHostelFeeForm, "month", "year", e.target.value)}
+                >
+                  <option value="">Select year</option>
+                  {hostelYearOptions.map((y) => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
             <input
               name="monthlyFee"
               type="number"
@@ -1433,13 +1468,32 @@ export default function App() {
               }}
             >
               <input name="pin" placeholder="PIN" value={attendanceForm.pin} readOnly />
-              <input
-                name="month"
-                placeholder="Month (same as fee master)"
-                value={attendanceForm.month}
-                onChange={handleInput(setAttendanceForm)}
-                required
-              />
+              <div className="grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                <div>
+                  <label className="hint" style={{ marginTop: 0 }}>Month</label>
+                  <select
+                    value={parseMonthYear(attendanceForm.month).month}
+                    onChange={(e) => setMonthYearField(setAttendanceForm, "month", "month", e.target.value)}
+                  >
+                    <option value="">Select month</option>
+                    {HOSTEL_MONTHS.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="hint" style={{ marginTop: 0 }}>Year</label>
+                  <select
+                    value={parseMonthYear(attendanceForm.month).year}
+                    onChange={(e) => setMonthYearField(setAttendanceForm, "month", "year", e.target.value)}
+                  >
+                    <option value="">Select year</option>
+                    {hostelYearOptions.map((y) => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
               <input
                 name="totalDays"
                 type="number"
@@ -1478,7 +1532,32 @@ export default function App() {
               }}
             >
               <input name="pin" placeholder="PIN" value={hostelPaymentForm.pin} readOnly />
-              <input name="month" placeholder="Month" value={hostelPaymentForm.month} onChange={handleInput(setHostelPaymentForm)} required />
+              <div className="grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                <div>
+                  <label className="hint" style={{ marginTop: 0 }}>Month</label>
+                  <select
+                    value={parseMonthYear(hostelPaymentForm.month).month}
+                    onChange={(e) => setMonthYearField(setHostelPaymentForm, "month", "month", e.target.value)}
+                  >
+                    <option value="">Select month</option>
+                    {HOSTEL_MONTHS.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="hint" style={{ marginTop: 0 }}>Year</label>
+                  <select
+                    value={parseMonthYear(hostelPaymentForm.month).year}
+                    onChange={(e) => setMonthYearField(setHostelPaymentForm, "month", "year", e.target.value)}
+                  >
+                    <option value="">Select year</option>
+                    {hostelYearOptions.map((y) => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
               <input name="phone" placeholder="Phone (optional)" value={hostelPaymentForm.phone} onChange={handleInput(setHostelPaymentForm)} />
               <input
                 name="amountPaid"
