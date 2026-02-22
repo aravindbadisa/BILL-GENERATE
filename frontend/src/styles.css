@@ -17,7 +17,8 @@
   --card: rgba(255, 255, 255, 0.82);
   --cardBorder: rgba(255, 255, 255, 0.28);
   --text: #0f172a;
-  --muted: #475569;
+  --textStrong: #020617;
+  --muted: #334155;
   --danger: #b91c1c;
   --success: #166534;
   --shadow: 0 20px 60px rgba(2, 6, 23, 0.22);
@@ -57,6 +58,8 @@
 body {
   margin: 0;
   min-height: 100vh;
+  font-size: 17px;
+  line-height: 1.45;
   background: radial-gradient(1100px 700px at 15% 15%, var(--glowA), transparent 60%),
     radial-gradient(900px 600px at 90% 25%, var(--glowB), transparent 58%),
     radial-gradient(900px 700px at 70% 95%, var(--glowD), transparent 60%),
@@ -109,19 +112,22 @@ body::after {
   margin: 0 0 6px;
   letter-spacing: -0.02em;
   color: var(--heroText);
+  font-size: 40px;
+  line-height: 1.1;
 }
 
 .hero p {
   margin: 0;
   color: var(--heroMuted);
   max-width: 70ch;
+  font-size: 16px;
 }
 
 .card {
   background: var(--card);
   border: 1px solid var(--cardBorder);
   border-radius: 16px;
-  padding: 16px;
+  padding: 18px;
   margin-bottom: 14px;
   box-shadow: var(--shadow);
   backdrop-filter: blur(10px);
@@ -142,7 +148,7 @@ body::after {
 
 form {
   display: grid;
-  gap: 8px;
+  gap: 10px;
 }
 
 input,
@@ -156,7 +162,7 @@ select {
   width: 100%;
   border: 1px solid rgba(148, 163, 184, 0.55);
   border-radius: 12px;
-  padding: 10px;
+  padding: 12px 12px;
   background: rgba(255, 255, 255, 0.9);
 }
 
@@ -165,7 +171,7 @@ textarea {
   width: 100%;
   border: 1px solid rgba(148, 163, 184, 0.55);
   border-radius: 12px;
-  padding: 10px;
+  padding: 12px 12px;
   background: rgba(255, 255, 255, 0.92);
 }
 
@@ -182,7 +188,9 @@ button {
   border-radius: 12px;
   background: linear-gradient(135deg, var(--primaryA), var(--primaryB));
   color: rgba(255, 255, 255, 0.96);
-  padding: 10px 12px;
+  padding: 12px 14px;
+  min-height: 44px;
+  font-size: 16px;
   cursor: pointer;
   transition: transform 140ms ease, filter 140ms ease, box-shadow 140ms ease;
   box-shadow: 0 10px 24px rgba(2, 6, 23, 0.22);
@@ -258,9 +266,9 @@ table {
 th,
 td {
   border: 1px solid rgba(226, 232, 240, 0.85);
-  padding: 8px;
+  padding: 10px 10px;
   text-align: left;
-  font-size: 14px;
+  font-size: 15px;
 }
 
 th {
@@ -288,12 +296,13 @@ ul {
   margin-top: 10px;
   border: 1px solid rgba(226, 232, 240, 0.9);
   border-radius: 12px;
-  padding: 10px;
-  background: rgba(255, 255, 255, 0.78);
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.86);
 }
 
 .receipt p {
   margin: 4px 0;
+  font-size: 15px;
 }
 
 .topbar {
@@ -310,7 +319,7 @@ ul {
   background: var(--badgeBg);
   border: 1px solid var(--badgeBorder);
   color: rgba(255, 255, 255, 0.92);
-  font-size: 14px;
+  font-size: 15px;
 }
 
 .badge.subtle {
@@ -337,7 +346,7 @@ ul {
 .hint {
   margin: 10px 0 0;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .hero .hint {
@@ -386,5 +395,20 @@ ul {
   }
   button {
     transition: none;
+  }
+}
+
+@media (max-width: 560px) {
+  body {
+    font-size: 16px;
+  }
+  .hero h1 {
+    font-size: 32px;
+  }
+  .hero p {
+    font-size: 15px;
+  }
+  .inline {
+    flex-wrap: wrap;
   }
 }
