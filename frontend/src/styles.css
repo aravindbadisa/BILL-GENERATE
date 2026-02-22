@@ -1,6 +1,19 @@
 :root {
-  --bg0: #0b1020;
-  --bg1: #101a3a;
+  /* Theme defaults (login) */
+  --bg0: #070a16;
+  --bg1: #111a3a;
+  --glowA: rgba(99, 102, 241, 0.55);
+  --glowB: rgba(56, 189, 248, 0.45);
+  --glowC: rgba(244, 63, 94, 0.16);
+  --glowD: rgba(34, 197, 94, 0.18);
+  --noise: rgba(255, 255, 255, 0.06);
+  --heroText: rgba(255, 255, 255, 0.92);
+  --heroMuted: rgba(226, 232, 240, 0.86);
+  --badgeBg: rgba(255, 255, 255, 0.14);
+  --badgeBorder: rgba(255, 255, 255, 0.22);
+  --primaryA: rgba(99, 102, 241, 1);
+  --primaryB: rgba(56, 189, 248, 1);
+
   --card: rgba(255, 255, 255, 0.82);
   --cardBorder: rgba(255, 255, 255, 0.28);
   --text: #0f172a;
@@ -13,6 +26,30 @@
   color: var(--text);
 }
 
+/* Admin theme: clean blue/cyan */
+:root[data-theme="admin"] {
+  --bg0: #070a18;
+  --bg1: #0f2a3d;
+  --glowA: rgba(14, 165, 233, 0.55);
+  --glowB: rgba(34, 211, 238, 0.42);
+  --glowC: rgba(99, 102, 241, 0.18);
+  --glowD: rgba(34, 197, 94, 0.14);
+  --primaryA: rgba(14, 165, 233, 1);
+  --primaryB: rgba(34, 211, 238, 1);
+}
+
+/* Billing theme: warm + lively */
+:root[data-theme="billing"] {
+  --bg0: #09061a;
+  --bg1: #2a1138;
+  --glowA: rgba(168, 85, 247, 0.50);
+  --glowB: rgba(251, 146, 60, 0.30);
+  --glowC: rgba(236, 72, 153, 0.26);
+  --glowD: rgba(34, 197, 94, 0.14);
+  --primaryA: rgba(168, 85, 247, 1);
+  --primaryB: rgba(236, 72, 153, 1);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -20,9 +57,10 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: radial-gradient(1100px 700px at 15% 15%, rgba(120, 119, 198, 0.55), transparent 60%),
-    radial-gradient(900px 600px at 90% 25%, rgba(56, 189, 248, 0.45), transparent 58%),
-    radial-gradient(900px 700px at 70% 95%, rgba(34, 197, 94, 0.25), transparent 60%),
+  background: radial-gradient(1100px 700px at 15% 15%, var(--glowA), transparent 60%),
+    radial-gradient(900px 600px at 90% 25%, var(--glowB), transparent 58%),
+    radial-gradient(900px 700px at 70% 95%, var(--glowD), transparent 60%),
+    radial-gradient(900px 650px at 35% 85%, var(--glowC), transparent 62%),
     linear-gradient(135deg, var(--bg0), var(--bg1));
   background-attachment: fixed;
 }
@@ -52,8 +90,8 @@ body::before {
 }
 
 body::after {
-  background: radial-gradient(circle at 30% 40%, rgba(255, 255, 255, 0.12), transparent 55%),
-    radial-gradient(circle at 70% 55%, rgba(255, 255, 255, 0.10), transparent 58%);
+  background: radial-gradient(circle at 30% 40%, var(--noise), transparent 55%),
+    radial-gradient(circle at 70% 55%, rgba(255, 255, 255, 0.05), transparent 58%);
   animation: float2 22s ease-in-out infinite;
 }
 
@@ -70,12 +108,12 @@ body::after {
 .hero h1 {
   margin: 0 0 6px;
   letter-spacing: -0.02em;
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--heroText);
 }
 
 .hero p {
   margin: 0;
-  color: rgba(226, 232, 240, 0.88);
+  color: var(--heroMuted);
   max-width: 70ch;
 }
 
@@ -87,6 +125,7 @@ body::after {
   margin-bottom: 14px;
   box-shadow: var(--shadow);
   backdrop-filter: blur(10px);
+  animation: cardIn 260ms ease both;
 }
 
 .grid {
@@ -141,7 +180,7 @@ select:focus {
 button {
   border: none;
   border-radius: 12px;
-  background: linear-gradient(135deg, #0f172a, #111b34);
+  background: linear-gradient(135deg, var(--primaryA), var(--primaryB));
   color: rgba(255, 255, 255, 0.96);
   padding: 10px 12px;
   cursor: pointer;
@@ -241,8 +280,8 @@ ul {
   display: inline-block;
   padding: 6px 10px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.14);
-  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: var(--badgeBg);
+  border: 1px solid var(--badgeBorder);
   color: rgba(255, 255, 255, 0.92);
   font-size: 14px;
 }
@@ -274,6 +313,17 @@ ul {
   }
   100% {
     transform: translate3d(1%, 0.5%, 0);
+  }
+}
+
+@keyframes cardIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 

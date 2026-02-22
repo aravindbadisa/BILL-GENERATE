@@ -134,6 +134,15 @@ export default function App() {
     if (token) loadMe(token);
   }, [token]);
 
+  useEffect(() => {
+    const root = document.documentElement;
+    const theme = !me ? "login" : me.role === "admin" ? "admin" : "billing";
+    root.dataset.theme = theme;
+    return () => {
+      delete root.dataset.theme;
+    };
+  }, [me]);
+
   const handleInput = (setter) => (e) => {
     setter((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   };
