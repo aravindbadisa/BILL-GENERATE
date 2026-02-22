@@ -696,7 +696,7 @@ export default function App() {
           ))}
         </datalist>
         <header className="hero">
-          <h1>College Billing System</h1>
+          <h1>College Fee & Hostel Billing</h1>
           <p>Login required</p>
         </header>
         {error && <p className="error">{error}</p>}
@@ -744,7 +744,7 @@ export default function App() {
           ))}
         </datalist>
         <header className="hero">
-          <h1>College Billing System</h1>
+          <h1>College Fee & Hostel Billing</h1>
           <p>Password setup required</p>
           <div className="topbar">
             <span className="badge">
@@ -809,7 +809,7 @@ export default function App() {
         ))}
       </datalist>
       <header className="hero">
-        <h1>College Billing System</h1>
+        <h1>College Fee & Hostel Billing</h1>
         <p>Built from your Excel structure: fees, payments, attendance, balances, receipt</p>
         <div className="topbar">
           <span className="badge">
