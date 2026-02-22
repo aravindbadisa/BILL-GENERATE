@@ -12,7 +12,17 @@ const API_BASE = resolveApiBase();
 const TOKEN_KEY = "billing_token";
 
 const initialStudent = { pin: "", name: "", course: "", phone: "", collegeTotalFee: "" };
-const initialCombinedPayment = { pin: "", phone: "", collegeAmountPaid: "", hostelMonth: "", hostelAmountPaid: "" };
+const initialCombinedPayment = {
+  pin: "",
+  phone: "",
+  collegeAmountPaid: "",
+  hostelAmountPaid: "",
+  hostelMonth: "",
+  hostelMonthName: "",
+  hostelYear: ""
+};
+
+const HOSTEL_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const initialHostelFee = { month: "", monthlyFee: "" };
 const initialAttendance = { pin: "", month: "", totalDays: "", daysStayed: "" };
 const initialHostelPayment = { pin: "", month: "", amountPaid: "", phone: "" };
@@ -62,6 +72,14 @@ export default function App() {
   const [receiptLoading, setReceiptLoading] = useState(false);
   const [pinSearch, setPinSearch] = useState("");
   const [lastPaymentReceipt, setLastPaymentReceipt] = useState(null);
+
+  const hostelYearOptions = (() => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const years = [];
+    for (let i = y - 1; i <= y + 6; i += 1) years.push(String(i));
+    return years;
+  })();
 
   const readResponseBody = async (res) => {
     const contentType = String(res.headers.get("content-type") || "").toLowerCase();
@@ -306,6 +324,16 @@ export default function App() {
     setAttendanceForm((p) => ({ ...p, pin: receiptData.pin }));
     setHostelPaymentForm((p) => ({ ...p, pin: receiptData.pin }));
   }, [receiptData?.pin]);
+
+  useEffect(() => {
+    setCombinedPaymentForm((prev) => {
+      const m = String(prev.hostelMonthName || "").trim();
+      const y = String(prev.hostelYear || "").trim();
+      const hostelMonth = m && y ? `${m}-${y}` : "";
+      if (prev.hostelMonth === hostelMonth) return prev;
+      return { ...prev, hostelMonth };
+    });
+  }, [combinedPaymentForm.hostelMonthName, combinedPaymentForm.hostelYear]);
 
   const downloadReceiptPdf = async (kind = "auto") => {
     setMessage("");
@@ -1315,13 +1343,36 @@ export default function App() {
               </div>
             </div>
 
-            <input
-              name="hostelMonth"
-              placeholder="Hostel Month (e.g. Jan-2026)"
-              value={combinedPaymentForm.hostelMonth}
-              onChange={handleInput(setCombinedPaymentForm)}
-              disabled={!showHostel}
-            />
+            <div className="grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
+              <div>
+                <label className="hint" style={{ marginTop: 0 }}>Hostel Month</label>
+                <select
+                  name="hostelMonthName"
+                  value={combinedPaymentForm.hostelMonthName}
+                  onChange={handleInput(setCombinedPaymentForm)}
+                  disabled={!showHostel}
+                >
+                  <option value="">Select month</option>
+                  {HOSTEL_MONTHS.map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="hint" style={{ marginTop: 0 }}>Hostel Year</label>
+                <select
+                  name="hostelYear"
+                  value={combinedPaymentForm.hostelYear}
+                  onChange={handleInput(setCombinedPaymentForm)}
+                  disabled={!showHostel}
+                >
+                  <option value="">Select year</option>
+                  {hostelYearOptions.map((y) => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
 
             <button type="submit" disabled={!receiptData?.pin}>Save Payment & Generate Receipt</button>
             {!receiptData?.pin && <p className="hint">Select a student PIN above first.</p>}
