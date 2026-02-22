@@ -104,6 +104,10 @@ app.use(express.json());
 
 const toNumber = (value) => Number(value || 0);
 
+app.get("/", (req, res) => {
+  res.status(200).send("Backend is running. Try /api/health");
+});
+
 const sanitizeUser = (user) => ({
   id: String(user._id),
   collegeKey: user.collegeKey || "default",
