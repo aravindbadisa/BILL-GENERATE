@@ -15,6 +15,7 @@ const CollegePayment = require("./models/CollegePayment");
 const HostelFeeMaster = require("./models/HostelFeeMaster");
 const HostelAttendance = require("./models/HostelAttendance");
 const HostelPayment = require("./models/HostelPayment");
+const StudentImport = require("./models/StudentImport");
 
 dotenv.config();
 
@@ -32,8 +33,11 @@ const normalizeRole = (roleRaw) => {
 };
 
 const normalizeCollegeKey = (value) => {
-  const key = String(value || "").trim();
-  return key.length ? key : "default";
+  const raw = String(value || "").trim();
+  if (!raw) return "default";
+  if (raw.toLowerCase() === "default") return "default";
+  if (/^\d+$/.test(raw)) return raw.padStart(3, "0");
+  return raw;
 };
 
 const collegeMatch = (collegeKeyRaw) => {
@@ -98,12 +102,73 @@ const sanitizeUser = (user) => ({
   active: user.active
 });
 
-const computeStudentBalances = async (pin) => {
+const pickFirst = (obj, keys) => {
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(obj, key)) return obj[key];
+  }
+  return undefined;
+};
+
+const normalizeStudentRow = (row) => {
+  const pin = String(pickFirst(row, ["pin", "PIN", "Pin"]) || "").trim();
+  const name = String(pickFirst(row, ["name", "Name"]) || "").trim();
+  const course = String(pickFirst(row, ["course", "Course"]) || "").trim();
+  const phone = String(
+    pickFirst(row, ["phone", "Phone", "mobile", "Mobile", "whatsapp", "WhatsApp"]) || ""
+  ).trim();
+
+  const collegeTotalFeeRaw = pickFirst(row, [
+    "collegeTotalFee",
+    "college_total_fee",
+    "College Total Fee",
+    "CollegeTotalFee",
+    "College Total",
+    "Total Fee",
+    "totalFee"
+  ]);
+  const hasCollegeTotalFee =
+    collegeTotalFeeRaw !== undefined && String(collegeTotalFeeRaw).trim().length > 0;
+
+  return {
+    pin,
+    name,
+    course,
+    phone,
+    collegeTotalFee: hasCollegeTotalFee ? toNumber(collegeTotalFeeRaw) : null
+  };
+};
+
+const importStudents = async (collegeKey, rows) => {
+  const ops = rows.map((row) => ({
+    updateOne: {
+      filter: { collegeKey, pin: row.pin },
+      update: {
+        $set: {
+          collegeKey,
+          pin: row.pin,
+          name: row.name,
+          course: row.course,
+          phone: row.phone || "",
+          collegeTotalFee: toNumber(row.collegeTotalFee)
+        }
+      },
+      upsert: true
+    }
+  }));
+
+  const result = await Student.bulkWrite(ops, { ordered: false });
+  const created = result.upsertedCount ?? Object.keys(result.upsertedIds || {}).length ?? 0;
+  const updated = result.modifiedCount ?? 0;
+  return { created, updated, total: rows.length };
+};
+
+const computeStudentBalances = async (collegeKey, pin) => {
+  const collegeFilter = collegeMatch(collegeKey);
   const [student, collegePayments, hostelAttendance, hostelPayments] = await Promise.all([
-    Student.findOne({ pin }),
-    CollegePayment.find({ pin }),
-    HostelAttendance.find({ pin }),
-    HostelPayment.find({ pin })
+    Student.findOne({ ...collegeFilter, pin }),
+    CollegePayment.find({ ...collegeFilter, pin }),
+    HostelAttendance.find({ ...collegeFilter, pin }),
+    HostelPayment.find({ ...collegeFilter, pin })
   ]);
 
   if (!student) return null;
@@ -119,6 +184,7 @@ const computeStudentBalances = async (pin) => {
   const hostelBalance = Math.round(Math.max(0, hostelCharged - hostelPaid));
 
   return {
+    collegeKey: student.collegeKey || normalizeCollegeKey(collegeKey),
     pin: student.pin,
     name: student.name,
     course: student.course,
@@ -161,9 +227,7 @@ app.post("/api/auth/login", async (req, res) => {
 
 app.get("/api/auth/me", authRequired, async (req, res) => {
   try {
-    const user = await User.findById(req.auth.sub);
-    if (!user || !user.active) return res.status(401).json({ message: "Unauthorized" });
-    res.json({ user: sanitizeUser(user) });
+    res.json({ user: sanitizeUser(req.user) });
   } catch (error) {
     res.status(500).json({ message: "Failed to load user" });
   }
@@ -177,9 +241,21 @@ app.post("/api/students", authRequired, anyRoleRequired(BILLING_ROLES), async (r
       return res.status(400).json({ message: "pin, name, course, collegeTotalFee are required" });
     }
 
+    const collegeKey =
+      req.user.role === "admin"
+        ? normalizeCollegeKey(req.body?.collegeKey)
+        : normalizeCollegeKey(req.user.collegeKey);
+
     const student = await Student.findOneAndUpdate(
-      { pin },
-      { pin, name, course, phone: String(phone || "").trim(), collegeTotalFee: toNumber(collegeTotalFee) },
+      { collegeKey, pin },
+      {
+        collegeKey,
+        pin,
+        name,
+        course,
+        phone: String(phone || "").trim(),
+        collegeTotalFee: toNumber(collegeTotalFee)
+      },
       { upsert: true, new: true, runValidators: true }
     );
     res.status(201).json(student);
@@ -190,7 +266,14 @@ app.post("/api/students", authRequired, anyRoleRequired(BILLING_ROLES), async (r
 
 app.get("/api/students", authRequired, anyRoleRequired(BILLING_ROLES), async (req, res) => {
   try {
-    const students = await Student.find().sort({ createdAt: -1 });
+    const filter =
+      req.user.role === "admin"
+        ? req.query.collegeKey
+          ? collegeMatch(req.query.collegeKey)
+          : {}
+        : collegeMatch(req.user.collegeKey);
+
+    const students = await Student.find(filter).sort({ createdAt: -1 });
     res.json(students);
   } catch (error) {
     res.status(500).json({ message: "Failed to load students" });
@@ -204,15 +287,21 @@ app.post(
   async (req, res) => {
   try {
     const { date, pin, amountPaid, phone } = req.body;
-    if (!date || !pin || !amountPaid) {
-      return res.status(400).json({ message: "date, pin, amountPaid are required" });
+    if (!pin || !amountPaid) {
+      return res.status(400).json({ message: "pin, amountPaid are required" });
     }
 
-    const student = await Student.findOne({ pin });
+    const collegeKey =
+      req.user.role === "admin"
+        ? normalizeCollegeKey(req.body?.collegeKey)
+        : normalizeCollegeKey(req.user.collegeKey);
+
+    const student = await Student.findOne({ ...collegeMatch(collegeKey), pin });
     if (!student) return res.status(404).json({ message: "Student not found" });
 
     const payment = await CollegePayment.create({
-      date: new Date(date),
+      date: date ? new Date(date) : new Date(),
+      collegeKey,
       pin,
       amountPaid: toNumber(amountPaid),
       phone: String(phone || "").trim()
@@ -231,9 +320,14 @@ app.post("/api/hostel-fees", authRequired, anyRoleRequired(BILLING_ROLES), async
       return res.status(400).json({ message: "month and monthlyFee are required" });
     }
 
+    const collegeKey =
+      req.user.role === "admin"
+        ? normalizeCollegeKey(req.body?.collegeKey)
+        : normalizeCollegeKey(req.user.collegeKey);
+
     const fee = await HostelFeeMaster.findOneAndUpdate(
-      { month },
-      { month, monthlyFee: toNumber(monthlyFee) },
+      { collegeKey, month },
+      { collegeKey, month, monthlyFee: toNumber(monthlyFee) },
       { upsert: true, new: true, runValidators: true }
     );
     res.status(201).json(fee);
@@ -244,7 +338,14 @@ app.post("/api/hostel-fees", authRequired, anyRoleRequired(BILLING_ROLES), async
 
 app.get("/api/hostel-fees", authRequired, anyRoleRequired(BILLING_ROLES), async (req, res) => {
   try {
-    const data = await HostelFeeMaster.find().sort({ month: 1 });
+    const filter =
+      req.user.role === "admin"
+        ? req.query.collegeKey
+          ? collegeMatch(req.query.collegeKey)
+          : {}
+        : collegeMatch(req.user.collegeKey);
+
+    const data = await HostelFeeMaster.find(filter).sort({ month: 1 });
     res.json(data);
   } catch (error) {
     res.status(500).json({ message: "Failed to load hostel fees" });
@@ -262,23 +363,33 @@ app.post(
       return res.status(400).json({ message: "pin, month, totalDays are required" });
     }
 
-    const student = await Student.findOne({ pin });
+    const collegeKey =
+      req.user.role === "admin"
+        ? normalizeCollegeKey(req.body?.collegeKey)
+        : normalizeCollegeKey(req.user.collegeKey);
+
+    const student = await Student.findOne({ ...collegeMatch(collegeKey), pin });
     if (!student) return res.status(404).json({ message: "Student not found" });
 
-    const monthly = await HostelFeeMaster.findOne({ month });
+    const monthly = await HostelFeeMaster.findOne({ ...collegeMatch(collegeKey), month });
     if (!monthly) return res.status(404).json({ message: "Month not configured in hostel fee master" });
 
     const total = Math.max(1, toNumber(totalDays));
     const stayed = Math.max(0, Math.min(toNumber(daysStayed), total));
     const calculatedFee = Math.round((toNumber(monthly.monthlyFee) / total) * stayed);
 
-    const attendance = await HostelAttendance.create({
-      pin,
-      month,
-      totalDays: total,
-      daysStayed: stayed,
-      calculatedFee
-    });
+    const attendance = await HostelAttendance.findOneAndUpdate(
+      { collegeKey, pin, month },
+      {
+        collegeKey,
+        pin,
+        month,
+        totalDays: total,
+        daysStayed: stayed,
+        calculatedFee
+      },
+      { upsert: true, new: true, runValidators: true }
+    );
 
     res.status(201).json(attendance);
   } catch (error) {
@@ -294,15 +405,21 @@ app.post(
   async (req, res) => {
   try {
     const { date, pin, month, amountPaid, phone } = req.body;
-    if (!date || !pin || !month || !amountPaid) {
-      return res.status(400).json({ message: "date, pin, month, amountPaid are required" });
+    if (!pin || !month || !amountPaid) {
+      return res.status(400).json({ message: "pin, month, amountPaid are required" });
     }
 
-    const student = await Student.findOne({ pin });
+    const collegeKey =
+      req.user.role === "admin"
+        ? normalizeCollegeKey(req.body?.collegeKey)
+        : normalizeCollegeKey(req.user.collegeKey);
+
+    const student = await Student.findOne({ ...collegeMatch(collegeKey), pin });
     if (!student) return res.status(404).json({ message: "Student not found" });
 
     const payment = await HostelPayment.create({
-      date: new Date(date),
+      date: date ? new Date(date) : new Date(),
+      collegeKey,
       pin,
       month,
       amountPaid: toNumber(amountPaid),
@@ -321,8 +438,17 @@ app.get(
   anyRoleRequired(BILLING_ROLES),
   async (req, res) => {
   try {
-    const students = await Student.find().sort({ createdAt: -1 });
-    const balances = await Promise.all(students.map((item) => computeStudentBalances(item.pin)));
+    const filter =
+      req.user.role === "admin"
+        ? req.query.collegeKey
+          ? collegeMatch(req.query.collegeKey)
+          : {}
+        : collegeMatch(req.user.collegeKey);
+
+    const students = await Student.find(filter).sort({ createdAt: -1 });
+    const balances = await Promise.all(
+      students.map((item) => computeStudentBalances(item.collegeKey || "default", item.pin))
+    );
     res.json(balances.filter(Boolean));
   } catch (error) {
     res.status(500).json({ message: "Failed to load dashboard" });
@@ -332,7 +458,12 @@ app.get(
 
 app.get("/api/receipt/:pin", authRequired, anyRoleRequired(BILLING_ROLES), async (req, res) => {
   try {
-    const data = await computeStudentBalances(req.params.pin);
+    const collegeKey =
+      req.user.role === "admin"
+        ? normalizeCollegeKey(req.query?.collegeKey)
+        : normalizeCollegeKey(req.user.collegeKey);
+
+    const data = await computeStudentBalances(collegeKey, req.params.pin);
     if (!data) return res.status(404).json({ message: "Student not found" });
 
     res.json({
@@ -347,7 +478,12 @@ app.get("/api/receipt/:pin", authRequired, anyRoleRequired(BILLING_ROLES), async
 app.get("/api/receipt/:pin/pdf", authRequired, anyRoleRequired(BILLING_ROLES), async (req, res) => {
   try {
     const pin = String(req.params.pin || "").trim();
-    const data = await computeStudentBalances(pin);
+    const collegeKey =
+      req.user.role === "admin"
+        ? normalizeCollegeKey(req.query?.collegeKey)
+        : normalizeCollegeKey(req.user.collegeKey);
+
+    const data = await computeStudentBalances(collegeKey, pin);
     if (!data) return res.status(404).json({ message: "Student not found" });
 
     const generatedOn = new Date();
@@ -436,6 +572,18 @@ app.post("/api/admin/users", authRequired, roleRequired("admin"), async (req, re
 
     const passwordHash = await bcrypt.hash(String(password), 10);
     const finalCollegeKey = normalizeCollegeKey(collegeKey);
+
+    if (finalRole === "principal") {
+      const existingPrincipal = await User.findOne({
+        role: "principal",
+        ...collegeMatch(finalCollegeKey),
+        email: { $ne: String(email).toLowerCase().trim() }
+      });
+      if (existingPrincipal) {
+        return res.status(400).json({ message: `Principal already exists for college ${finalCollegeKey}` });
+      }
+    }
+
     const user = await User.findOneAndUpdate(
       { email: String(email).toLowerCase().trim() },
       {
@@ -550,6 +698,21 @@ app.post(
           continue;
         }
 
+        if (finalRole === "principal") {
+          const existingPrincipal = await User.findOne({
+            role: "principal",
+            ...collegeMatch(rowCollegeKey),
+            email: { $ne: rowEmail }
+          });
+          if (existingPrincipal) {
+            errors.push({
+              row: i + 2,
+              message: `Principal already exists for college ${rowCollegeKey}`
+            });
+            continue;
+          }
+        }
+
         const passwordHash = await bcrypt.hash(String(rowPassword), 10);
         const active =
           rowActiveRaw === ""
@@ -650,6 +813,159 @@ app.post("/api/admin/colleges/active", authRequired, roleRequired("admin"), asyn
     });
   } catch (error) {
     res.status(500).json({ message: "Failed to update college users" });
+  }
+});
+
+app.post(
+  "/api/student-imports",
+  authRequired,
+  anyRoleRequired(["admin", "principal"]),
+  upload.single("file"),
+  async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ message: "file is required" });
+
+      const uploaderRole = String(req.user?.role || "").toLowerCase().trim();
+      const autoApprove = uploaderRole === "admin";
+
+      const importCollegeKey = autoApprove
+        ? normalizeCollegeKey(req.body.collegeKey)
+        : normalizeCollegeKey(req.user?.collegeKey);
+
+      const rowsRaw = rowsFromUpload(req.file);
+      if (!rowsRaw || rowsRaw.length === 0) return res.status(400).json({ message: "No rows found" });
+      if (rowsRaw.length > 5000) return res.status(400).json({ message: "Too many rows (max 5000)" });
+
+      const rows = [];
+      const errors = [];
+
+      for (let i = 0; i < rowsRaw.length; i++) {
+        const row = rowsRaw[i] || {};
+        const normalized = normalizeStudentRow(row);
+        if (!normalized.pin || !normalized.name || !normalized.course || normalized.collegeTotalFee === null) {
+          errors.push({
+            row: i + 2,
+            message: "Missing required fields (pin,name,course,collegeTotalFee)"
+          });
+          continue;
+        }
+        rows.push(normalized);
+      }
+
+      if (errors.length) return res.status(400).json({ message: "Invalid rows found", errors });
+
+      const record = await StudentImport.create({
+        collegeKey: importCollegeKey,
+        status: autoApprove ? "approved" : "pending",
+        uploadedBy: req.auth.sub,
+        uploadedByEmail: String(req.auth.email || ""),
+        uploadedByRole: uploaderRole,
+        originalName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        size: req.file.size,
+        rows
+      });
+
+      if (!autoApprove) {
+        return res.status(201).json({
+          importId: String(record._id),
+          status: record.status,
+          collegeKey: record.collegeKey,
+          rows: rows.length
+        });
+      }
+
+      const result = await importStudents(importCollegeKey, rows);
+      record.result = result;
+      record.decidedBy = req.auth.sub;
+      record.decidedAt = new Date();
+      await record.save();
+
+      res.status(201).json({
+        importId: String(record._id),
+        status: record.status,
+        collegeKey: record.collegeKey,
+        result
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Student import failed" });
+    }
+  }
+);
+
+app.get("/api/student-imports/my", authRequired, anyRoleRequired(["principal"]), async (req, res) => {
+  try {
+    const records = await StudentImport.find({ uploadedBy: req.auth.sub })
+      .select("-rows")
+      .sort({ createdAt: -1 });
+    res.json(records);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to load imports" });
+  }
+});
+
+app.get("/api/admin/student-imports", authRequired, roleRequired("admin"), async (req, res) => {
+  try {
+    const records = await StudentImport.find().select("-rows").sort({ createdAt: -1 });
+    res.json(records);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to load imports" });
+  }
+});
+
+app.get("/api/admin/student-imports/:id", authRequired, roleRequired("admin"), async (req, res) => {
+  try {
+    const record = await StudentImport.findById(req.params.id);
+    if (!record) return res.status(404).json({ message: "Import not found" });
+    res.json({
+      ...record.toObject(),
+      rows: (record.rows || []).slice(0, 50)
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to load import" });
+  }
+});
+
+app.post("/api/admin/student-imports/:id/approve", authRequired, roleRequired("admin"), async (req, res) => {
+  try {
+    const record = await StudentImport.findById(req.params.id);
+    if (!record) return res.status(404).json({ message: "Import not found" });
+    if (record.status !== "pending") {
+      return res.status(400).json({ message: `Import is ${record.status}, cannot approve` });
+    }
+    if (!record.rows || record.rows.length === 0) {
+      return res.status(400).json({ message: "Import has no rows" });
+    }
+
+    const result = await importStudents(record.collegeKey, record.rows);
+    record.status = "approved";
+    record.result = result;
+    record.decidedBy = req.auth.sub;
+    record.decidedAt = new Date();
+    record.decisionNote = String(req.body?.note || "").trim();
+    await record.save();
+
+    res.json({ importId: String(record._id), status: record.status, result });
+  } catch (error) {
+    res.status(500).json({ message: "Approve failed" });
+  }
+});
+
+app.post("/api/admin/student-imports/:id/reject", authRequired, roleRequired("admin"), async (req, res) => {
+  try {
+    const record = await StudentImport.findById(req.params.id);
+    if (!record) return res.status(404).json({ message: "Import not found" });
+    if (record.status !== "pending") {
+      return res.status(400).json({ message: `Import is ${record.status}, cannot reject` });
+    }
+    record.status = "rejected";
+    record.decidedBy = req.auth.sub;
+    record.decidedAt = new Date();
+    record.decisionNote = String(req.body?.note || "").trim();
+    await record.save();
+    res.json({ importId: String(record._id), status: record.status });
+  } catch (error) {
+    res.status(500).json({ message: "Reject failed" });
   }
 });
 

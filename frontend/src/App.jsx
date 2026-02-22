@@ -4,10 +4,10 @@ const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000";
 const TOKEN_KEY = "billing_token";
 
 const initialStudent = { pin: "", name: "", course: "", phone: "", collegeTotalFee: "" };
-const initialCollegePayment = { date: "", pin: "", amountPaid: "", phone: "" };
+const initialCollegePayment = { pin: "", amountPaid: "", phone: "" };
 const initialHostelFee = { month: "", monthlyFee: "" };
 const initialAttendance = { pin: "", month: "", totalDays: "", daysStayed: "" };
-const initialHostelPayment = { date: "", pin: "", month: "", amountPaid: "", phone: "" };
+const initialHostelPayment = { pin: "", month: "", amountPaid: "", phone: "" };
 const initialLogin = { email: "", password: "" };
 const initialCreateUser = {
   collegeKey: "default",
@@ -546,7 +546,6 @@ export default function App() {
               );
             }}
           >
-            <input name="date" type="date" value={collegePaymentForm.date} onChange={handleInput(setCollegePaymentForm)} required />
             <input name="pin" placeholder="PIN" value={collegePaymentForm.pin} onChange={handleInput(setCollegePaymentForm)} required />
             <input name="phone" placeholder="Phone (optional)" value={collegePaymentForm.phone} onChange={handleInput(setCollegePaymentForm)} />
             <input
@@ -630,7 +629,6 @@ export default function App() {
               );
             }}
           >
-            <input name="date" type="date" value={hostelPaymentForm.date} onChange={handleInput(setHostelPaymentForm)} required />
             <input name="pin" placeholder="PIN" value={hostelPaymentForm.pin} onChange={handleInput(setHostelPaymentForm)} required />
             <input name="month" placeholder="Month" value={hostelPaymentForm.month} onChange={handleInput(setHostelPaymentForm)} required />
             <input name="phone" placeholder="Phone (optional)" value={hostelPaymentForm.phone} onChange={handleInput(setHostelPaymentForm)} />

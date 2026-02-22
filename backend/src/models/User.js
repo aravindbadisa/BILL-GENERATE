@@ -17,4 +17,9 @@ const userSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+userSchema.index(
+  { collegeKey: 1, role: 1 },
+  { unique: true, partialFilterExpression: { role: "principal" } }
+);
+
 module.exports = mongoose.model("User", userSchema);
