@@ -17,6 +17,14 @@ const initialCreateUser = {
   password: "",
   active: "true"
 };
+const initialAdminStudent = {
+  collegeKey: "",
+  pin: "",
+  name: "",
+  course: "",
+  phone: "",
+  collegeTotalFee: ""
+};
 
 export default function App() {
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || "");
@@ -279,6 +287,7 @@ export default function App() {
   const [createUserForm, setCreateUserForm] = useState(initialCreateUser);
   const [importFile, setImportFile] = useState(null);
   const [colleges, setColleges] = useState([]);
+  const [adminStudentForm, setAdminStudentForm] = useState(initialAdminStudent);
 
   const isAdmin = me?.role === "admin";
 
@@ -331,6 +340,26 @@ export default function App() {
       setMessage(`User saved.${temp}`);
       setCreateUserForm(initialCreateUser);
       await Promise.all([loadUsers(), loadColleges()]);
+    } catch (e2) {
+      setError(e2.message);
+    }
+  };
+
+  const createStudentAsAdmin = async (e) => {
+    e.preventDefault();
+    setMessage("");
+    setError("");
+    try {
+      if (!adminStudentForm.collegeKey) throw new Error("College Code is required");
+      if (!adminStudentForm.pin || !adminStudentForm.name || !adminStudentForm.course) {
+        throw new Error("PIN, Name, Course are required");
+      }
+      if (adminStudentForm.collegeTotalFee === "" || adminStudentForm.collegeTotalFee === null) {
+        throw new Error("College Total Fee is required");
+      }
+      await callApi("/api/students", "POST", adminStudentForm);
+      setMessage("Student saved.");
+      setAdminStudentForm(initialAdminStudent);
     } catch (e2) {
       setError(e2.message);
     }
@@ -549,6 +578,36 @@ export default function App() {
             </form>
             <p className="hint">
               Columns required: `collegeKey,email,name,role,password` (optional `active`). Role must be `admin`, `principal`, `accountant`, or `staff`.
+            </p>
+          </div>
+
+          <div>
+            <h2>Admin: Add Student (Single)</h2>
+            <form onSubmit={createStudentAsAdmin}>
+              <input
+                name="collegeKey"
+                placeholder="College Code (e.g. 008)"
+                value={adminStudentForm.collegeKey}
+                onChange={handleInput(setAdminStudentForm)}
+                required
+              />
+              <input name="pin" placeholder="PIN" value={adminStudentForm.pin} onChange={handleInput(setAdminStudentForm)} required />
+              <input name="name" placeholder="Name" value={adminStudentForm.name} onChange={handleInput(setAdminStudentForm)} required />
+              <input name="course" placeholder="Course" value={adminStudentForm.course} onChange={handleInput(setAdminStudentForm)} required />
+              <input name="phone" placeholder="Phone (optional)" value={adminStudentForm.phone} onChange={handleInput(setAdminStudentForm)} />
+              <input
+                name="collegeTotalFee"
+                type="number"
+                min="0"
+                placeholder="College Total Fee"
+                value={adminStudentForm.collegeTotalFee}
+                onChange={handleInput(setAdminStudentForm)}
+                required
+              />
+              <button type="submit">Save Student</button>
+            </form>
+            <p className="hint">
+              Use this when you need to add one student manually (without Excel). Students cannot log in; this is only billing data.
             </p>
           </div>
         </section>
