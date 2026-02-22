@@ -313,6 +313,27 @@ ul {
   font-size: 14px;
 }
 
+.badge.subtle {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.22);
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.list {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  color: var(--text);
+}
+
+.list li {
+  margin: 6px 0;
+  color: var(--text);
+}
+
+.list b {
+  color: var(--textStrong);
+}
+
 .hint {
   margin: 10px 0 0;
   color: var(--muted);
