@@ -1,7 +1,14 @@
 import { useEffect, useState } from "react";
 import { branches, colleges as collegesMaster, normalizeCollegeCode } from "./data/collegeData";
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const resolveApiBase = () => {
+  const envUrl = String(import.meta.env.VITE_API_URL || "").trim();
+  if (import.meta.env.DEV) return envUrl || "http://localhost:5000";
+  if (envUrl && !/localhost|127\.0\.0\.1/i.test(envUrl)) return envUrl;
+  return window.location.origin;
+};
+
+const API_BASE = resolveApiBase();
 const TOKEN_KEY = "billing_token";
 
 const initialStudent = { pin: "", name: "", course: "", phone: "", collegeTotalFee: "" };

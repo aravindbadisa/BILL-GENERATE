@@ -117,9 +117,18 @@ const toNumber = (value) => Number(value || 0);
       return;
     }
 
+    // Prevent stale HTML caching (common cause of "blank page" when assets are re-hashed).
+    app.use((req, res, next) => {
+      if (req.method === "GET" && (req.path === "/" || req.path.endsWith(".html"))) {
+        res.setHeader("Cache-Control", "no-store");
+      }
+      next();
+    });
+
     app.use(express.static(distDir));
     // SPA fallback for non-API routes
     app.get(/^\/(?!api\/).*/, (req, res) => {
+      res.setHeader("Cache-Control", "no-store");
       res.sendFile(indexFile);
     });
   } catch {
