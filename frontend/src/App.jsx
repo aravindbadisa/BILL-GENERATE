@@ -52,7 +52,6 @@ export default function App() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
-  const [studentForm, setStudentForm] = useState(initialStudent);
   const [collegePaymentForm, setCollegePaymentForm] = useState(initialCollegePayment);
   const [hostelFeeForm, setHostelFeeForm] = useState(initialHostelFee);
   const [attendanceForm, setAttendanceForm] = useState(initialAttendance);
@@ -60,6 +59,7 @@ export default function App() {
   const [receiptPin, setReceiptPin] = useState("");
   const [receiptData, setReceiptData] = useState(null);
   const [receiptPhone, setReceiptPhone] = useState("");
+  const [pinSearch, setPinSearch] = useState("");
 
   const readResponseBody = async (res) => {
     const contentType = String(res.headers.get("content-type") || "").toLowerCase();
@@ -205,18 +205,48 @@ export default function App() {
     }
   };
 
-  const fetchReceipt = async () => {
+  const fetchReceiptForPin = async (pinRaw) => {
+    const pin = String(pinRaw || "").trim();
+    if (!pin) return;
+    setReceiptPin(pin);
     setMessage("");
     setError("");
     setReceiptData(null);
     try {
-      const data = await callApi(`/api/receipt/${receiptPin}`);
+      const data = await callApi(`/api/receipt/${encodeURIComponent(pin)}`);
       setReceiptData(data);
       setReceiptPhone(data.phone || "");
     } catch (e) {
       setError(e.message);
     }
   };
+
+  const fetchReceipt = async () => fetchReceiptForPin(receiptPin);
+
+  const clearSelectedStudent = () => {
+    setReceiptPin("");
+    setReceiptData(null);
+    setReceiptPhone("");
+    setCollegePaymentForm(initialCollegePayment);
+    setAttendanceForm(initialAttendance);
+    setHostelPaymentForm(initialHostelPayment);
+  };
+
+  const showHostel =
+    Boolean(receiptData) &&
+    Boolean(
+      receiptData.hasHostel ||
+        Number(receiptData.hostelCharged || 0) > 0 ||
+        Number(receiptData.hostelPaid || 0) > 0 ||
+        Number(receiptData.hostelBalance || 0) > 0
+    );
+
+  useEffect(() => {
+    if (!receiptData?.pin) return;
+    setCollegePaymentForm((p) => ({ ...p, pin: receiptData.pin }));
+    setAttendanceForm((p) => ({ ...p, pin: receiptData.pin }));
+    setHostelPaymentForm((p) => ({ ...p, pin: receiptData.pin }));
+  }, [receiptData?.pin]);
 
   const downloadReceiptPdf = async (kind = "auto") => {
     setMessage("");
@@ -1145,35 +1175,35 @@ export default function App() {
         <>
         <section className="card grid">
         <div>
-          <h2>Student Master</h2>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              submitForm("/api/students", studentForm, () => setStudentForm(initialStudent));
-            }}
-          >
-            <input name="pin" placeholder="PIN" value={studentForm.pin} onChange={handleInput(setStudentForm)} required />
-            <input name="name" placeholder="Name" value={studentForm.name} onChange={handleInput(setStudentForm)} required />
-            <input
-              name="course"
-              placeholder="Course"
-              value={studentForm.course}
-              onChange={handleInput(setStudentForm)}
-              list="courseOptions"
-              required
-            />
-            <input name="phone" placeholder="Phone (optional)" value={studentForm.phone} onChange={handleInput(setStudentForm)} />
-            <input
-              name="collegeTotalFee"
-              type="number"
-              min="0"
-              placeholder="College Total Fee"
-              value={studentForm.collegeTotalFee}
-              onChange={handleInput(setStudentForm)}
-              required
-            />
-            <button type="submit">Save Student</button>
-          </form>
+          <h2>Student Search</h2>
+          <div className="inline">
+            <input value={receiptPin} onChange={(e) => setReceiptPin(e.target.value)} placeholder="Enter PIN" />
+            <button type="button" onClick={fetchReceipt} disabled={!receiptPin.trim()}>
+              Load
+            </button>
+            <button type="button" className="secondary" onClick={clearSelectedStudent}>
+              Clear
+            </button>
+          </div>
+
+          {receiptData ? (
+            <div className="receipt" style={{ marginTop: 10 }}>
+              <p><strong>PIN:</strong> {receiptData.pin}</p>
+              <p><strong>Name:</strong> {receiptData.name}</p>
+              <p><strong>Course:</strong> {receiptData.course}</p>
+              <p><strong>Phone:</strong> {receiptData.phone || "-"}</p>
+              <p><strong>College Balance:</strong> {receiptData.collegeBalance}</p>
+              {showHostel ? (
+                <p><strong>Hostel Balance:</strong> {receiptData.hostelBalance}</p>
+              ) : (
+                <p className="hint">This student is college-only (no hostel).</p>
+              )}
+            </div>
+          ) : (
+            <p className="hint" style={{ marginTop: 10 }}>
+              Enter a PIN to load student details + remaining balance. If PIN is empty, all students are shown below.
+            </p>
+          )}
         </div>
 
         <div>
@@ -1182,11 +1212,11 @@ export default function App() {
             onSubmit={(e) => {
               e.preventDefault();
               submitForm("/api/college-payments", collegePaymentForm, () =>
-                setCollegePaymentForm(initialCollegePayment)
+                setCollegePaymentForm((p) => ({ ...initialCollegePayment, pin: receiptData?.pin || "" }))
               );
             }}
           >
-            <input name="pin" placeholder="PIN" value={collegePaymentForm.pin} onChange={handleInput(setCollegePaymentForm)} required />
+            <input name="pin" placeholder="PIN (select student first)" value={collegePaymentForm.pin} readOnly />
             <input name="phone" placeholder="Phone (optional)" value={collegePaymentForm.phone} onChange={handleInput(setCollegePaymentForm)} />
             <input
               name="amountPaid"
@@ -1197,11 +1227,13 @@ export default function App() {
               onChange={handleInput(setCollegePaymentForm)}
               required
             />
-            <button type="submit">Add College Payment</button>
+            <button type="submit" disabled={!receiptData?.pin}>Add College Payment</button>
+            {!receiptData?.pin && <p className="hint">Select a student PIN above first.</p>}
           </form>
         </div>
       </section>
 
+      {showHostel && (
       <section className="card grid">
         <div>
           <h2>Hostel Fee Master</h2>
@@ -1230,10 +1262,12 @@ export default function App() {
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              submitForm("/api/hostel-attendance", attendanceForm, () => setAttendanceForm(initialAttendance));
+              submitForm("/api/hostel-attendance", attendanceForm, () =>
+                setAttendanceForm((p) => ({ ...initialAttendance, pin: receiptData?.pin || "" }))
+              );
             }}
           >
-            <input name="pin" placeholder="PIN" value={attendanceForm.pin} onChange={handleInput(setAttendanceForm)} required />
+            <input name="pin" placeholder="PIN" value={attendanceForm.pin} readOnly />
             <input name="month" placeholder="Month (same as fee master)" value={attendanceForm.month} onChange={handleInput(setAttendanceForm)} required />
             <input
               name="totalDays"
@@ -1253,55 +1287,56 @@ export default function App() {
               onChange={handleInput(setAttendanceForm)}
               required
             />
-            <button type="submit">Add Attendance</button>
+            <button type="submit" disabled={!receiptData?.pin}>Add Attendance</button>
+            {!receiptData?.pin && <p className="hint">Select a student PIN above first.</p>}
           </form>
         </div>
       </section>
+      )}
 
       <section className="card grid">
-        <div>
-          <h2>Hostel Payment</h2>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              submitForm("/api/hostel-payments", hostelPaymentForm, () =>
-                setHostelPaymentForm(initialHostelPayment)
-              );
-            }}
-          >
-            <input name="pin" placeholder="PIN" value={hostelPaymentForm.pin} onChange={handleInput(setHostelPaymentForm)} required />
-            <input name="month" placeholder="Month" value={hostelPaymentForm.month} onChange={handleInput(setHostelPaymentForm)} required />
-            <input name="phone" placeholder="Phone (optional)" value={hostelPaymentForm.phone} onChange={handleInput(setHostelPaymentForm)} />
-            <input
-              name="amountPaid"
-              type="number"
-              min="1"
-              placeholder="Amount Paid"
-              value={hostelPaymentForm.amountPaid}
-              onChange={handleInput(setHostelPaymentForm)}
-              required
-            />
-            <button type="submit">Add Hostel Payment</button>
-          </form>
-        </div>
+        {showHostel && (
+          <div>
+            <h2>Hostel Payment</h2>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                submitForm("/api/hostel-payments", hostelPaymentForm, () =>
+                  setHostelPaymentForm((p) => ({ ...initialHostelPayment, pin: receiptData?.pin || "" }))
+                );
+              }}
+            >
+              <input name="pin" placeholder="PIN" value={hostelPaymentForm.pin} readOnly />
+              <input name="month" placeholder="Month" value={hostelPaymentForm.month} onChange={handleInput(setHostelPaymentForm)} required />
+              <input name="phone" placeholder="Phone (optional)" value={hostelPaymentForm.phone} onChange={handleInput(setHostelPaymentForm)} />
+              <input
+                name="amountPaid"
+                type="number"
+                min="1"
+                placeholder="Amount Paid"
+                value={hostelPaymentForm.amountPaid}
+                onChange={handleInput(setHostelPaymentForm)}
+                required
+              />
+              <button type="submit" disabled={!receiptData?.pin}>Add Hostel Payment</button>
+              {!receiptData?.pin && <p className="hint">Select a student PIN above first.</p>}
+            </form>
+          </div>
+        )}
 
         <div>
-          <h2>Receipt Lookup</h2>
+          <h2>Receipt PDF / WhatsApp</h2>
           <div className="inline">
-            <input value={receiptPin} onChange={(e) => setReceiptPin(e.target.value)} placeholder="Enter PIN" />
-            <button type="button" onClick={fetchReceipt}>Get Receipt Data</button>
-          </div>
-          <div className="inline" style={{ marginTop: 8 }}>
             <input
               value={receiptPhone}
               onChange={(e) => setReceiptPhone(e.target.value)}
               placeholder="WhatsApp phone (optional)"
             />
-            <button type="button" className="secondary" onClick={() => downloadReceiptPdf("auto")}>
+            <button type="button" className="secondary" onClick={() => downloadReceiptPdf("auto")} disabled={!receiptData?.pin}>
               Download PDF
             </button>
             {canWhatsApp && (
-              <button type="button" onClick={openWhatsApp}>
+              <button type="button" onClick={openWhatsApp} disabled={!receiptData?.pin}>
                 WhatsApp Message
               </button>
             )}
@@ -1325,6 +1360,13 @@ export default function App() {
 
       <section className="card">
         <h2>Live Student Dashboard</h2>
+        <div className="inline" style={{ marginBottom: 8 }}>
+          <input
+            value={pinSearch}
+            onChange={(e) => setPinSearch(e.target.value)}
+            placeholder="Search by PIN (leave empty to show all)"
+          />
+        </div>
         {dashboard.length === 0 ? (
           <p>No students yet.</p>
         ) : (
@@ -1344,8 +1386,14 @@ export default function App() {
                 </tr>
               </thead>
               <tbody>
-                {dashboard.map((item) => (
-                  <tr key={item.pin}>
+                {dashboard
+                  .filter((item) => {
+                    const q = String(pinSearch || "").trim();
+                    if (!q) return true;
+                    return String(item.pin || "").includes(q);
+                  })
+                  .map((item) => (
+                  <tr key={item.pin} style={{ cursor: "pointer" }} onClick={() => fetchReceiptForPin(item.pin)}>
                     <td>{item.pin}</td>
                     <td>{item.name}</td>
                     <td>{item.course}</td>

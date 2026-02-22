@@ -167,6 +167,17 @@ const normalizeStudentRow = (row) => {
   const phone = String(
     pickFirst(row, ["phone", "Phone", "mobile", "Mobile", "whatsapp", "WhatsApp"]) || ""
   ).trim();
+  const hasHostelRaw = pickFirst(row, [
+    "hasHostel",
+    "has_hostel",
+    "Hostel",
+    "hostel",
+    "hostelEnabled",
+    "hostel_enabled",
+    "isHostel",
+    "is_hostel"
+  ]);
+  const hasHostel = truthy(hasHostelRaw);
 
   const collegeTotalFeeRaw = pickFirst(row, [
     "collegeTotalFee",
@@ -185,6 +196,7 @@ const normalizeStudentRow = (row) => {
     name,
     course,
     phone,
+    hasHostel,
     collegeTotalFee: hasCollegeTotalFee ? toNumber(collegeTotalFeeRaw) : null
   };
 };
@@ -200,6 +212,7 @@ const importStudents = async (collegeKey, rows) => {
           name: row.name,
           course: row.course,
           phone: row.phone || "",
+          hasHostel: Boolean(row.hasHostel),
           collegeTotalFee: toNumber(row.collegeTotalFee)
         }
       },
@@ -240,6 +253,7 @@ const computeStudentBalances = async (collegeKey, pin) => {
     name: student.name,
     course: student.course,
     phone: student.phone || "",
+    hasHostel: Boolean(student.hasHostel),
     collegeTotalFee: student.collegeTotalFee,
     collegePaid,
     collegeBalance,
@@ -306,7 +320,7 @@ app.post("/api/auth/change-password", authRequired, async (req, res) => {
 // Billing routes: only logged-in staff/admin can create/update data.
 app.post("/api/students", authRequired, anyRoleRequired(BILLING_ROLES), async (req, res) => {
   try {
-    const { pin, name, course, phone, collegeTotalFee } = req.body;
+    const { pin, name, course, phone, collegeTotalFee, hasHostel } = req.body;
     if (!pin || !name || !course || collegeTotalFee === undefined) {
       return res.status(400).json({ message: "pin, name, course, collegeTotalFee are required" });
     }
@@ -316,18 +330,21 @@ app.post("/api/students", authRequired, anyRoleRequired(BILLING_ROLES), async (r
         ? normalizeCollegeKey(req.body?.collegeKey)
         : normalizeCollegeKey(req.user.collegeKey);
 
-    const student = await Student.findOneAndUpdate(
-      { collegeKey, pin },
-      {
-        collegeKey,
-        pin,
-        name,
-        course,
-        phone: String(phone || "").trim(),
-        collegeTotalFee: toNumber(collegeTotalFee)
-      },
-      { upsert: true, new: true, runValidators: true }
-    );
+    const update = {
+      collegeKey,
+      pin,
+      name,
+      course,
+      phone: String(phone || "").trim(),
+      collegeTotalFee: toNumber(collegeTotalFee)
+    };
+    if (req.user.role === "admin") update.hasHostel = Boolean(hasHostel);
+
+    const student = await Student.findOneAndUpdate({ collegeKey, pin }, update, {
+      upsert: true,
+      new: true,
+      runValidators: true
+    });
     res.status(201).json(student);
   } catch (error) {
     res.status(500).json({ message: "Failed to save student" });
@@ -926,8 +943,8 @@ app.post("/api/admin/colleges/active", authRequired, roleRequired("admin"), asyn
 app.get("/api/student-imports/template", authRequired, anyRoleRequired(["admin", "principal"]), async (req, res) => {
   try {
     const csv =
-      "pin,name,course,phone,collegeTotalFee\n" +
-      "220001,Student Name,COMPUTER ENGINEERING,9876543210,12000\n";
+      "pin,name,course,phone,hasHostel,collegeTotalFee\n" +
+      "220001,Student Name,COMPUTER ENGINEERING,9876543210,true,12000\n";
 
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", "attachment; filename=\"students_template.csv\"");
