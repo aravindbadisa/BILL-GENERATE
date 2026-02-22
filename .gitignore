@@ -5,6 +5,7 @@ frontend/dist/
 .data/
 .vscode/
 tools/
+.runtime/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
