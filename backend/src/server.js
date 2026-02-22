@@ -439,17 +439,39 @@ const renderPaymentReceiptPdf = (res, record) => {
   doc.moveTo(tableX + colSno + colPart, rowY).lineTo(tableX + colSno + colPart, rowY + rowH).stroke();
   doc.restore();
 
-  const particulars =
-    record.paymentType === "hostel"
-      ? `Hostel Fee Payment${record.month ? ` (${record.month})` : ""}`
-      : "College Fee Payment";
+  const items =
+    Array.isArray(record.items) && record.items.length > 0
+      ? record.items
+      : [
+          {
+            type: record.paymentType,
+            month: record.month || "",
+            amount: Number(record.amountPaid || 0)
+          }
+        ];
 
+  let currentY = rowY;
   doc.font("Helvetica").fillColor("#111827").fontSize(10);
-  doc.text("1", tableX + 10, rowY + 10, { width: colSno - 20 });
-  doc.text(particulars, tableX + colSno + 10, rowY + 10, { width: colPart - 20 });
-  doc.text(money(record.amountPaid), tableX + colSno + colPart + 10, rowY + 10, { width: colAmt - 20, align: "right" });
+  items.forEach((it, idx) => {
+    doc.save();
+    doc.strokeColor(border).lineWidth(1).rect(tableX, currentY, tableW, rowH).stroke();
+    doc.moveTo(tableX + colSno, currentY).lineTo(tableX + colSno, currentY + rowH).stroke();
+    doc.moveTo(tableX + colSno + colPart, currentY).lineTo(tableX + colSno + colPart, currentY + rowH).stroke();
+    doc.restore();
 
-  const totalY = rowY + rowH;
+    const particulars =
+      it.type === "hostel"
+        ? `Hostel Fee Payment${it.month ? ` (${it.month})` : ""}`
+        : "College Fee Payment";
+
+    doc.text(String(idx + 1), tableX + 10, currentY + 10, { width: colSno - 20 });
+    doc.text(particulars, tableX + colSno + 10, currentY + 10, { width: colPart - 20 });
+    doc.text(money(it.amount), tableX + colSno + colPart + 10, currentY + 10, { width: colAmt - 20, align: "right" });
+
+    currentY += rowH;
+  });
+
+  const totalY = currentY;
   doc.save();
   doc.strokeColor(border).lineWidth(1).rect(tableX, totalY, tableW, rowH).stroke();
   doc.moveTo(tableX + colSno, totalY).lineTo(tableX + colSno, totalY + rowH).stroke();
@@ -654,6 +676,95 @@ app.post(
   }
   }
 );
+
+// Combined payment: record college and/or hostel in one submit and generate one receipt.
+app.post("/api/payments", authRequired, anyRoleRequired(BILLING_ROLES), async (req, res) => {
+  try {
+    const { pin, phone, date, collegeAmountPaid, hostelAmountPaid, hostelMonth } = req.body || {};
+    const pinValue = String(pin || "").trim();
+    if (!pinValue) return res.status(400).json({ message: "pin is required" });
+
+    const collegePaid = toNumber(collegeAmountPaid);
+    const hostelPaid = toNumber(hostelAmountPaid);
+    if (collegePaid <= 0 && hostelPaid <= 0) {
+      return res.status(400).json({ message: "Enter collegeAmountPaid and/or hostelAmountPaid" });
+    }
+
+    const collegeKey =
+      req.user.role === "admin"
+        ? normalizeCollegeKey(req.body?.collegeKey)
+        : normalizeCollegeKey(req.user.collegeKey);
+
+    const student = await Student.findOne({ ...collegeMatch(collegeKey), pin: pinValue });
+    if (!student) return res.status(404).json({ message: "Student not found" });
+
+    const payDate = date ? new Date(date) : new Date();
+    const cleanedPhone = String(phone || student.phone || "").trim();
+
+    const createdPayments = {};
+    const items = [];
+
+    if (collegePaid > 0) {
+      const payment = await CollegePayment.create({
+        date: payDate,
+        collegeKey,
+        pin: pinValue,
+        amountPaid: collegePaid,
+        phone: cleanedPhone
+      });
+      createdPayments.college = payment;
+      items.push({ type: "college", month: "", amount: collegePaid });
+    }
+
+    if (hostelPaid > 0) {
+      const month = String(hostelMonth || "").trim();
+      if (!month) return res.status(400).json({ message: "hostelMonth is required when hostelAmountPaid is entered" });
+      if (!student.hasHostel) {
+        return res.status(400).json({ message: "This student is not marked as hostel student" });
+      }
+
+      const payment = await HostelPayment.create({
+        date: payDate,
+        collegeKey,
+        pin: pinValue,
+        month,
+        amountPaid: hostelPaid,
+        phone: cleanedPhone
+      });
+      createdPayments.hostel = payment;
+      items.push({ type: "hostel", month, amount: hostelPaid });
+    }
+
+    const collegeName = getCollegeName(collegeKey);
+    const total = items.reduce((s, it) => s + toNumber(it.amount), 0);
+
+    const receipt = await PaymentReceipt.create({
+      receiptNo: generateReceiptNo(),
+      accessKey: generateAccessKey(),
+      collegeKey,
+      collegeName,
+      pin: pinValue,
+      paymentType: items.length === 1 ? items[0].type : "combined",
+      amountPaid: total,
+      month: items.length === 1 && items[0].type === "hostel" ? items[0].month : "",
+      items: items.length > 1 ? items : undefined,
+      paymentDate: payDate,
+      createdBy: String(req.auth?.sub || ""),
+      studentName: student.name || "",
+      course: student.course || "",
+      phone: cleanedPhone
+    });
+
+    res.status(201).json({
+      ok: true,
+      payments: createdPayments,
+      receiptNo: receipt.receiptNo,
+      receiptKey: receipt.accessKey
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to save payment" });
+  }
+});
 
 app.post("/api/hostel-fees", authRequired, anyRoleRequired(BILLING_ROLES), async (req, res) => {
   try {

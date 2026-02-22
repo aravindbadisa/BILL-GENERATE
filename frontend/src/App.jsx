@@ -12,7 +12,7 @@ const API_BASE = resolveApiBase();
 const TOKEN_KEY = "billing_token";
 
 const initialStudent = { pin: "", name: "", course: "", phone: "", collegeTotalFee: "" };
-const initialCollegePayment = { pin: "", amountPaid: "", phone: "" };
+const initialCombinedPayment = { pin: "", phone: "", collegeAmountPaid: "", hostelMonth: "", hostelAmountPaid: "" };
 const initialHostelFee = { month: "", monthlyFee: "" };
 const initialAttendance = { pin: "", month: "", totalDays: "", daysStayed: "" };
 const initialHostelPayment = { pin: "", month: "", amountPaid: "", phone: "" };
@@ -52,7 +52,7 @@ export default function App() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
-  const [collegePaymentForm, setCollegePaymentForm] = useState(initialCollegePayment);
+  const [combinedPaymentForm, setCombinedPaymentForm] = useState(initialCombinedPayment);
   const [hostelFeeForm, setHostelFeeForm] = useState(initialHostelFee);
   const [attendanceForm, setAttendanceForm] = useState(initialAttendance);
   const [hostelPaymentForm, setHostelPaymentForm] = useState(initialHostelPayment);
@@ -240,7 +240,7 @@ export default function App() {
     setReceiptData(null);
     setReceiptPhone("");
     setLastPaymentReceipt(null);
-    setCollegePaymentForm(initialCollegePayment);
+    setCombinedPaymentForm(initialCombinedPayment);
     setAttendanceForm(initialAttendance);
     setHostelPaymentForm(initialHostelPayment);
   };
@@ -258,7 +258,7 @@ export default function App() {
       setReceiptData(null);
       setReceiptPhone("");
       setReceiptLoading(false);
-      setCollegePaymentForm(initialCollegePayment);
+      setCombinedPaymentForm(initialCombinedPayment);
       setAttendanceForm(initialAttendance);
       setHostelPaymentForm(initialHostelPayment);
       return;
@@ -302,7 +302,7 @@ export default function App() {
 
   useEffect(() => {
     if (!receiptData?.pin) return;
-    setCollegePaymentForm((p) => ({ ...p, pin: receiptData.pin }));
+    setCombinedPaymentForm((p) => ({ ...p, pin: receiptData.pin }));
     setAttendanceForm((p) => ({ ...p, pin: receiptData.pin }));
     setHostelPaymentForm((p) => ({ ...p, pin: receiptData.pin }));
   }, [receiptData?.pin]);
@@ -1272,28 +1272,64 @@ export default function App() {
             </div>
 
         <div>
-          <h2>College Payment</h2>
+          <h2>Payment</h2>
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              submitForm("/api/college-payments", collegePaymentForm, () =>
-                setCollegePaymentForm((p) => ({ ...initialCollegePayment, pin: receiptData?.pin || "" }))
+              submitForm("/api/payments", combinedPaymentForm, () =>
+                setCombinedPaymentForm((p) => ({ ...initialCombinedPayment, pin: receiptData?.pin || "" }))
               );
             }}
           >
-            <input name="pin" placeholder="PIN (select student first)" value={collegePaymentForm.pin} readOnly />
-            <input name="phone" placeholder="Phone (optional)" value={collegePaymentForm.phone} onChange={handleInput(setCollegePaymentForm)} />
+            <input name="pin" placeholder="PIN (select student first)" value={combinedPaymentForm.pin} readOnly />
             <input
-              name="amountPaid"
-              type="number"
-              min="1"
-              placeholder="Amount Paid"
-              value={collegePaymentForm.amountPaid}
-              onChange={handleInput(setCollegePaymentForm)}
-              required
+              name="phone"
+              placeholder="Phone (optional)"
+              value={combinedPaymentForm.phone}
+              onChange={handleInput(setCombinedPaymentForm)}
             />
-            <button type="submit" disabled={!receiptData?.pin}>Add College Payment</button>
+
+            <div className="grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
+              <div>
+                <label className="hint" style={{ marginTop: 0 }}>College Amount Paid</label>
+                <input
+                  name="collegeAmountPaid"
+                  type="number"
+                  min="0"
+                  placeholder="0"
+                  value={combinedPaymentForm.collegeAmountPaid}
+                  onChange={handleInput(setCombinedPaymentForm)}
+                />
+              </div>
+              <div>
+                <label className="hint" style={{ marginTop: 0 }}>Hostel Amount Paid</label>
+                <input
+                  name="hostelAmountPaid"
+                  type="number"
+                  min="0"
+                  placeholder="0"
+                  value={combinedPaymentForm.hostelAmountPaid}
+                  onChange={handleInput(setCombinedPaymentForm)}
+                  disabled={!showHostel}
+                />
+              </div>
+            </div>
+
+            <input
+              name="hostelMonth"
+              placeholder="Hostel Month (e.g. Jan-2026)"
+              value={combinedPaymentForm.hostelMonth}
+              onChange={handleInput(setCombinedPaymentForm)}
+              disabled={!showHostel}
+            />
+
+            <button type="submit" disabled={!receiptData?.pin}>Save Payment & Generate Receipt</button>
             {!receiptData?.pin && <p className="hint">Select a student PIN above first.</p>}
+            {!showHostel && (
+              <p className="hint">
+                Hostel fields are disabled because this student is not marked as a hostel student.
+              </p>
+            )}
           </form>
         </div>
       </section>
