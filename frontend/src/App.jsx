@@ -78,7 +78,6 @@ export default function App() {
   const [lastPaymentReceipt, setLastPaymentReceipt] = useState(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [paymentMode, setPaymentMode] = useState({ college: true, hostel: false });
-  const [selectedHostelMonth, setSelectedHostelMonth] = useState({ month: "", year: "" });
 
   const [prefs, setPrefs] = useState(() => {
     try {
@@ -109,11 +108,6 @@ export default function App() {
     return years;
   })();
 
-  const selectedHostelMonthValue =
-    selectedHostelMonth.month && selectedHostelMonth.year
-      ? `${selectedHostelMonth.month}-${selectedHostelMonth.year}`
-      : "";
-
   const parseMonthYear = (value) => {
     const raw = String(value || "").trim();
     const m = raw.match(/^([A-Za-z]{3})-(\d{4})$/);
@@ -128,10 +122,6 @@ export default function App() {
       const year = part === "year" ? String(nextValue || "") : current.year;
       return { ...prev, [field]: month && year ? `${month}-${year}` : "" };
     });
-  };
-
-  const setSelectedHostelMonthPart = (part, nextValue) => {
-    setSelectedHostelMonth((prev) => ({ ...prev, [part]: String(nextValue || "") }));
   };
 
   const readResponseBody = async (res) => {
@@ -403,38 +393,12 @@ export default function App() {
     setAttendanceForm((p) => ({ ...p, pin: receiptData.pin }));
     setHostelPaymentForm((p) => ({ ...p, pin: receiptData.pin }));
     setPaymentMode((prev) => ({ ...prev, college: true, hostel: Boolean(prev.hostel && receiptData.hasHostel) }));
-
-    if (receiptData.hasHostel) {
-      // Default hostel month/year to current if not set yet (keeps UI simple).
-      setSelectedHostelMonth((prev) => {
-        if (prev.month && prev.year) return prev;
-        const now = new Date();
-        return { month: HOSTEL_MONTHS[now.getMonth()], year: String(now.getFullYear()) };
-      });
-    } else {
-      setSelectedHostelMonth({ month: "", year: "" });
-    }
-
     if (prefs.autoScroll) {
       setTimeout(() => {
         paymentCardRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
       }, 50);
     }
-  }, [receiptData?.pin, receiptData?.hasHostel]);
-
-  useEffect(() => {
-    if (!selectedHostelMonthValue) return;
-    setHostelFeeForm((p) => ({ ...p, month: selectedHostelMonthValue }));
-    setAttendanceForm((p) => ({ ...p, month: selectedHostelMonthValue }));
-
-    // If hostel payment is enabled, auto-fill month/year in payment form if empty.
-    if (paymentMode.hostel) {
-      setCombinedPaymentForm((p) => {
-        if (p.hostelMonthName && p.hostelYear) return p;
-        return { ...p, hostelMonthName: selectedHostelMonth.month, hostelYear: selectedHostelMonth.year };
-      });
-    }
-  }, [selectedHostelMonthValue, paymentMode.hostel]);
+  }, [receiptData?.pin]);
 
   useEffect(() => {
     setCombinedPaymentForm((prev) => {
@@ -1593,105 +1557,6 @@ export default function App() {
         </div>
       </section>
 
-      {(showHostel || paymentMode.hostel) && (
-        <section className="card grid">
-          <div>
-            <h2>Hostel — Monthly Fee & Attendance</h2>
-            <p className="hint" style={{ marginTop: 6 }}>
-              Required for hostel students: select month/year, set monthly fee (master), then add attendance for the student.
-            </p>
-
-            <div className="grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
-              <div>
-                <label className="hint" style={{ marginTop: 0 }}>Month</label>
-                <select value={selectedHostelMonth.month} onChange={(e) => setSelectedHostelMonthPart("month", e.target.value)}>
-                  <option value="">Select month</option>
-                  {HOSTEL_MONTHS.map((m) => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="hint" style={{ marginTop: 0 }}>Year</label>
-                <select value={selectedHostelMonth.year} onChange={(e) => setSelectedHostelMonthPart("year", e.target.value)}>
-                  <option value="">Select year</option>
-                  {hostelYearOptions.map((y) => (
-                    <option key={y} value={y}>{y}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </div>
-
-          <div />
-
-          <div>
-            <h3 style={{ marginTop: 0 }}>Monthly Fee Master</h3>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                submitForm("/api/hostel-fees", hostelFeeForm, () => setHostelFeeForm((p) => ({ ...p, monthlyFee: "" })));
-              }}
-            >
-              <input name="month" value={hostelFeeForm.month} readOnly placeholder="Month" />
-              <input
-                name="monthlyFee"
-                type="number"
-                min="0"
-                placeholder="Monthly Fee"
-                value={hostelFeeForm.monthlyFee}
-                onChange={handleInput(setHostelFeeForm)}
-                required
-              />
-              <button type="submit" disabled={!selectedHostelMonthValue}>Save Monthly Fee</button>
-              {!selectedHostelMonthValue && <p className="hint">Select month and year first.</p>}
-            </form>
-          </div>
-
-          <div>
-            <h3 style={{ marginTop: 0 }}>Attendance (Student)</h3>
-            {!showHostel ? (
-              <p className="hint" style={{ marginTop: 8 }}>
-                Select a hostel student (enable “Hostel student” above) to add attendance.
-              </p>
-            ) : (
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  submitForm("/api/hostel-attendance", attendanceForm, () =>
-                    setAttendanceForm((p) => ({ ...p, totalDays: "", daysStayed: "" }))
-                  );
-                }}
-              >
-                <input name="pin" placeholder="PIN" value={attendanceForm.pin} readOnly />
-                <input name="month" placeholder="Month" value={attendanceForm.month} readOnly />
-                <input
-                  name="totalDays"
-                  type="number"
-                  min="1"
-                  placeholder="Total Days in Month"
-                  value={attendanceForm.totalDays}
-                  onChange={handleInput(setAttendanceForm)}
-                  required
-                />
-                <input
-                  name="daysStayed"
-                  type="number"
-                  min="0"
-                  placeholder="Days Stayed"
-                  value={attendanceForm.daysStayed}
-                  onChange={handleInput(setAttendanceForm)}
-                  required
-                />
-                <button type="submit" disabled={!receiptData?.pin || !selectedHostelMonthValue}>Save Attendance</button>
-                {!receiptData?.pin && <p className="hint">Select a student PIN above first.</p>}
-                {!selectedHostelMonthValue && <p className="hint">Select month and year first.</p>}
-              </form>
-            )}
-          </div>
-        </section>
-      )}
-
       <section className="card" ref={receiptCardRef}>
         <h2>Step 3 — Receipt</h2>
         <div className="inline" style={{ flexWrap: "wrap" }}>
@@ -1737,6 +1602,126 @@ export default function App() {
           </div>
         )}
       </section>
+
+      {showAdvanced && (
+      <section className="card grid">
+        <div>
+          <h2>Hostel Fee Master</h2>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              submitForm("/api/hostel-fees", hostelFeeForm, () => setHostelFeeForm(initialHostelFee));
+            }}
+          >
+            <div className="grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
+              <div>
+                <label className="hint" style={{ marginTop: 0 }}>Month</label>
+                <select
+                  value={parseMonthYear(hostelFeeForm.month).month}
+                  onChange={(e) => setMonthYearField(setHostelFeeForm, "month", "month", e.target.value)}
+                >
+                  <option value="">Select month</option>
+                  {HOSTEL_MONTHS.map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="hint" style={{ marginTop: 0 }}>Year</label>
+                <select
+                  value={parseMonthYear(hostelFeeForm.month).year}
+                  onChange={(e) => setMonthYearField(setHostelFeeForm, "month", "year", e.target.value)}
+                >
+                  <option value="">Select year</option>
+                  {hostelYearOptions.map((y) => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <input
+              name="monthlyFee"
+              type="number"
+              min="0"
+              placeholder="Monthly Fee"
+              value={hostelFeeForm.monthlyFee}
+              onChange={handleInput(setHostelFeeForm)}
+              required
+            />
+            <button type="submit">Save Month Fee</button>
+          </form>
+          <p className="hint" style={{ marginTop: 8 }}>
+            Set hostel monthly fee first. Attendance + Hostel Payment are available only for hostel students.
+          </p>
+        </div>
+
+        <div>
+          <h2>Hostel Attendance</h2>
+          {!showHostel ? (
+            <p className="hint" style={{ marginTop: 8 }}>
+              Select a hostel student (enable “Hostel student” above) to add attendance.
+            </p>
+          ) : (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                submitForm("/api/hostel-attendance", attendanceForm, () =>
+                  setAttendanceForm((p) => ({ ...initialAttendance, pin: receiptData?.pin || "" }))
+                );
+              }}
+            >
+              <input name="pin" placeholder="PIN" value={attendanceForm.pin} readOnly />
+              <div className="grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                <div>
+                  <label className="hint" style={{ marginTop: 0 }}>Month</label>
+                  <select
+                    value={parseMonthYear(attendanceForm.month).month}
+                    onChange={(e) => setMonthYearField(setAttendanceForm, "month", "month", e.target.value)}
+                  >
+                    <option value="">Select month</option>
+                    {HOSTEL_MONTHS.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="hint" style={{ marginTop: 0 }}>Year</label>
+                  <select
+                    value={parseMonthYear(attendanceForm.month).year}
+                    onChange={(e) => setMonthYearField(setAttendanceForm, "month", "year", e.target.value)}
+                  >
+                    <option value="">Select year</option>
+                    {hostelYearOptions.map((y) => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <input
+                name="totalDays"
+                type="number"
+                min="1"
+                placeholder="Total Days in Month"
+                value={attendanceForm.totalDays}
+                onChange={handleInput(setAttendanceForm)}
+                required
+              />
+              <input
+                name="daysStayed"
+                type="number"
+                min="0"
+                placeholder="Days Stayed"
+                value={attendanceForm.daysStayed}
+                onChange={handleInput(setAttendanceForm)}
+                required
+              />
+              <button type="submit" disabled={!receiptData?.pin}>Add Attendance</button>
+              {!receiptData?.pin && <p className="hint">Select a student PIN above first.</p>}
+            </form>
+          )}
+        </div>
+      </section>
+      )}
 
 
 
