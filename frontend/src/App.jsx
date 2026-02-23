@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { branches, colleges as collegesMaster, normalizeCollegeCode } from "./data/collegeData";
 
 const resolveApiBase = () => {
@@ -10,6 +10,7 @@ const resolveApiBase = () => {
 
 const API_BASE = resolveApiBase();
 const TOKEN_KEY = "billing_token";
+const PREFS_KEY = "billing_prefs_v1";
 
 const initialStudent = { pin: "", name: "", course: "", phone: "", collegeTotalFee: "" };
 const initialCombinedPayment = {
@@ -45,6 +46,9 @@ const initialAdminStudent = {
 };
 
 export default function App() {
+  const paymentCardRef = useRef(null);
+  const receiptCardRef = useRef(null);
+
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || "");
   const [me, setMe] = useState(null);
   const [loginForm, setLoginForm] = useState(initialLogin);
@@ -72,6 +76,29 @@ export default function App() {
   const [receiptLoading, setReceiptLoading] = useState(false);
   const [pinSearch, setPinSearch] = useState("");
   const [lastPaymentReceipt, setLastPaymentReceipt] = useState(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [paymentMode, setPaymentMode] = useState({ college: true, hostel: false });
+
+  const [prefs, setPrefs] = useState(() => {
+    try {
+      const raw = localStorage.getItem(PREFS_KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+      return {
+        autoDownloadPaymentReceipt: parsed?.autoDownloadPaymentReceipt ?? true,
+        autoScroll: parsed?.autoScroll ?? true
+      };
+    } catch {
+      return { autoDownloadPaymentReceipt: true, autoScroll: true };
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+    } catch {
+      // ignore
+    }
+  }, [prefs]);
 
   const hostelYearOptions = (() => {
     const now = new Date();
@@ -238,11 +265,23 @@ export default function App() {
       await loadDashboard();
 
       // Keep the selected student's balances in sync after saving payments/attendance.
-      const pin = String(receiptPin || "").trim();
+      const pin = String(receiptPin || body?.pin || "").trim();
       if (pin) await loadReceiptForPin(pin);
 
       if (resp && typeof resp === "object" && resp.receiptNo) {
-        setLastPaymentReceipt({ receiptNo: resp.receiptNo, receiptKey: resp.receiptKey || "" });
+        const nextReceipt = { receiptNo: resp.receiptNo, receiptKey: resp.receiptKey || "" };
+        setLastPaymentReceipt(nextReceipt);
+        setShowAdvanced(false);
+
+        if (prefs.autoScroll) {
+          setTimeout(() => {
+            receiptCardRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+          }, 50);
+        }
+
+        if (prefs.autoDownloadPaymentReceipt) {
+          await downloadPaymentReceiptPdfByNo(nextReceipt.receiptNo);
+        }
       }
     } catch (e) {
       setError(e.message);
@@ -274,6 +313,7 @@ export default function App() {
     setReceiptData(null);
     setReceiptPhone("");
     setLastPaymentReceipt(null);
+    setPaymentMode({ college: true, hostel: false });
     setCombinedPaymentForm(initialCombinedPayment);
     setAttendanceForm(initialAttendance);
     setHostelPaymentForm(initialHostelPayment);
@@ -313,6 +353,15 @@ export default function App() {
         Number(receiptData.hostelBalance || 0) > 0
     );
 
+  const canSubmitPayment = (() => {
+    if (!receiptData?.pin) return false;
+    const collegeAmount = Number(combinedPaymentForm.collegeAmountPaid || 0);
+    const hostelAmount = Number(combinedPaymentForm.hostelAmountPaid || 0);
+    const collegeOk = Boolean(paymentMode.college) && collegeAmount > 0;
+    const hostelOk = Boolean(paymentMode.hostel) && hostelAmount > 0 && String(combinedPaymentForm.hostelMonth || "").trim();
+    return collegeOk || hostelOk;
+  })();
+
   const [studentHostelFlag, setStudentHostelFlag] = useState(false);
 
   useEffect(() => {
@@ -336,9 +385,19 @@ export default function App() {
 
   useEffect(() => {
     if (!receiptData?.pin) return;
-    setCombinedPaymentForm((p) => ({ ...p, pin: receiptData.pin }));
+    setCombinedPaymentForm((p) => ({
+      ...p,
+      pin: receiptData.pin,
+      phone: String(p.phone || receiptData.phone || "").trim()
+    }));
     setAttendanceForm((p) => ({ ...p, pin: receiptData.pin }));
     setHostelPaymentForm((p) => ({ ...p, pin: receiptData.pin }));
+    setPaymentMode((prev) => ({ ...prev, college: true, hostel: Boolean(prev.hostel && receiptData.hasHostel) }));
+    if (prefs.autoScroll) {
+      setTimeout(() => {
+        paymentCardRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+      }, 50);
+    }
   }, [receiptData?.pin]);
 
   useEffect(() => {
@@ -350,6 +409,10 @@ export default function App() {
       return { ...prev, hostelMonth };
     });
   }, [combinedPaymentForm.hostelMonthName, combinedPaymentForm.hostelYear]);
+
+  useEffect(() => {
+    if (!showHostel) setPaymentMode((prev) => ({ ...prev, hostel: false }));
+  }, [showHostel]);
 
   const downloadReceiptPdf = async (kind = "auto") => {
     setMessage("");
@@ -387,29 +450,41 @@ export default function App() {
     try {
       const receiptNo = String(lastPaymentReceipt?.receiptNo || "").trim();
       if (!receiptNo) throw new Error("No payment receipt yet");
-      const headers = {};
-      if (token) headers.Authorization = `Bearer ${token}`;
-      const res = await fetch(`${API_BASE}/api/payment-receipts/${encodeURIComponent(receiptNo)}/pdf`, { headers });
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(json.message || "Failed to download payment receipt PDF");
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `payment_receipt_${receiptNo}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      setMessage("Payment receipt PDF downloaded.");
+      await downloadPaymentReceiptPdfByNo(receiptNo);
     } catch (e) {
       setError(e.message);
     }
   };
 
-  const canWhatsApp = ["principal", "admin"].includes(me?.role);
+  const downloadPaymentReceiptPdfByNo = async (receiptNo) => {
+    const headers = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const res = await fetch(`${API_BASE}/api/payment-receipts/${encodeURIComponent(receiptNo)}/pdf`, { headers });
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      throw new Error(json.message || "Failed to download payment receipt PDF");
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `payment_receipt_${receiptNo}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    setMessage("Payment receipt PDF downloaded.");
+  };
+
+  const steps = useMemo(() => {
+    return [
+      { label: "Search", done: Boolean(receiptData?.pin) },
+      { label: "Pay", done: Boolean(lastPaymentReceipt?.receiptNo) },
+      { label: "Receipt", done: Boolean(lastPaymentReceipt?.receiptNo) }
+    ];
+  }, [receiptData?.pin, lastPaymentReceipt?.receiptNo]);
+
+  const canWhatsApp = Boolean(me);
   const openWhatsApp = () => {
     setMessage("");
     setError("");
@@ -417,17 +492,31 @@ export default function App() {
       setError("Fetch receipt data first");
       return;
     }
-    const raw = String(receiptPhone || "").trim();
+    const raw = String(receiptPhone || receiptData.phone || "").trim();
     const phoneDigits = raw.replace(/[^\d]/g, "");
     if (!phoneDigits) {
       setError("Enter phone number (include country code if needed)");
       return;
     }
     const totalDue = Number(receiptData.collegeBalance || 0) + Number(receiptData.hostelBalance || 0);
-    const text =
-      totalDue > 0
-        ? `Hello ${receiptData.name}, your remaining balance is College: ${receiptData.collegeBalance}, Hostel: ${receiptData.hostelBalance}, Total: ${totalDue}. Please pay the remaining amount.`
-        : `Hello ${receiptData.name}, your receipt summary: College paid ${receiptData.collegePaid} / ${receiptData.collegeTotalFee}. Hostel balance ${receiptData.hostelBalance}.`;
+
+    const receiptNo = String(lastPaymentReceipt?.receiptNo || "").trim();
+    const receiptKey = String(lastPaymentReceipt?.receiptKey || "").trim();
+    const publicReceiptUrl =
+      receiptNo && receiptKey
+        ? `${API_BASE}/api/public/payment-receipts/${encodeURIComponent(receiptNo)}/pdf?key=${encodeURIComponent(receiptKey)}`
+        : "";
+
+    const lines = [];
+    lines.push(`Hello ${receiptData.name},`);
+    if (receiptNo) {
+      lines.push(`Payment receipt: ${receiptNo}${receiptKey ? ` (Key: ${receiptKey})` : ""}`);
+      if (publicReceiptUrl) lines.push(`Receipt PDF: ${publicReceiptUrl}`);
+    }
+    lines.push(`Remaining balance — College: ${receiptData.collegeBalance}, Hostel: ${receiptData.hostelBalance}, Total: ${totalDue}`);
+    if (totalDue > 0) lines.push("Please pay the remaining amount.");
+
+    const text = lines.join("\n");
     const url = `https://wa.me/${phoneDigits}?text=${encodeURIComponent(text)}`;
     window.open(url, "_blank", "noopener,noreferrer");
   };
@@ -761,7 +850,7 @@ export default function App() {
     return (
       <div className="page">
         <header className="hero">
-          <h1>College Fee & Hostel Billing</h1>
+          <h1>College Billing Portal</h1>
           <p>Sign in to continue</p>
         </header>
         {error && <p className="error">{error}</p>}
@@ -795,7 +884,7 @@ export default function App() {
     return (
       <div className="page">
         <header className="hero">
-          <h1>College Fee & Hostel Billing</h1>
+          <h1>College Billing Portal</h1>
           <p>Password setup required</p>
           <div className="topbar">
             <span className="badge">
@@ -857,8 +946,7 @@ export default function App() {
         ))}
       </datalist>
       <header className="hero">
-        <h1>College Fee & Hostel Billing</h1>
-        <p>Fee collection, hostel billing, receipts & balances</p>
+        <h1>College Billing Portal</h1>
         <div className="topbar">
           <span className="badge">
             {me.name} ({me.role})
@@ -979,8 +1067,10 @@ export default function App() {
       )}
 
       {!isAdmin && isPrincipal && (
-        <section className="card">
-          <h2>Principal: Submit Students (Excel/CSV)</h2>
+        <details className="card">
+          <summary style={{ cursor: "pointer", fontWeight: 700 }}>Advanced — Upload students (Excel/CSV)</summary>
+          <div style={{ marginTop: 12 }}>
+          <h2 style={{ marginTop: 0 }}>Upload students (Excel/CSV)</h2>
           <div className="inline">
             <button type="button" className="secondary" onClick={downloadStudentsTemplate}>
               Download Students Template
@@ -1030,7 +1120,8 @@ export default function App() {
               </table>
             </div>
           )}
-        </section>
+          </div>
+        </details>
       )}
 
       {isAdmin && (
@@ -1259,9 +1350,39 @@ export default function App() {
 
       {!isAdmin && (
         <>
+          <section className="card">
+            <div className="stepsBar">
+              <ol className="steps">
+                {steps.map((s) => (
+                  <li key={s.label} className={s.done ? "done" : ""}>
+                    {s.label}
+                  </li>
+                ))}
+              </ol>
+              <div className="inline" style={{ flexWrap: "wrap" }}>
+                <label className="inline" style={{ gap: 8 }}>
+                  <input
+                    type="checkbox"
+                    checked={prefs.autoDownloadPaymentReceipt}
+                    onChange={(e) =>
+                      setPrefs((p) => ({ ...p, autoDownloadPaymentReceipt: e.target.checked }))
+                    }
+                  />
+                  Auto-download receipt
+                </label>
+                <button type="button" className="secondary" onClick={() => setShowAdvanced((v) => !v)}>
+                  {showAdvanced ? "Hide Advanced" : "Show Advanced"}
+                </button>
+              </div>
+            </div>
+            <p className="hint" style={{ marginTop: 8 }}>
+              Step 1: Enter PIN. Step 2: Enter payment. Step 3: Download PDF / WhatsApp.
+            </p>
+          </section>
+
         <section className="card grid">
             <div>
-              <h2>Student Search</h2>
+              <h2>Step 1 — Find Student</h2>
               <div className="inline">
                 <input
                   value={receiptPin}
@@ -1284,8 +1405,7 @@ export default function App() {
                   <p><strong>Name:</strong> {receiptData.name}</p>
                   <p><strong>Course:</strong> {receiptData.course}</p>
                   <p><strong>Phone:</strong> {receiptData.phone || "-"}</p>
-                  <p><strong>Receipt Key:</strong> {receiptData.receiptKey || "-"}</p>
-                  <p><strong>College Balance:</strong> {receiptData.collegeBalance}</p>
+                  <p><strong>College Remaining:</strong> {receiptData.collegeBalance}</p>
                   <div className="inline" style={{ marginTop: 8 }}>
                     <label className="inline" style={{ gap: 8 }}>
                       <input
@@ -1300,23 +1420,20 @@ export default function App() {
                     </button>
                   </div>
                   {showHostel ? (
-                    <p><strong>Hostel Balance:</strong> {receiptData.hostelBalance}</p>
+                    <p><strong>Hostel Remaining:</strong> {receiptData.hostelBalance}</p>
                   ) : (
                     <p className="hint">This student is college-only (no hostel).</p>
                   )}
-                  <p className="hint" style={{ marginTop: 6 }}>
-                    Generated: {receiptData.generatedOn ? new Date(receiptData.generatedOn).toLocaleString() : "-"}
-                  </p>
                 </div>
               ) : (
                 <p className="hint" style={{ marginTop: 10 }}>
-                  Enter a PIN to load student details + remaining balance. If PIN is empty, all students are shown below.
+                  Enter a PIN to load student details + remaining balance. (Optional) Use “Show Advanced” to see the full student list.
                 </p>
               )}
             </div>
 
         <div>
-          <h2>Payment</h2>
+          <h2>Step 2 — Take Payment</h2>
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -1328,79 +1445,165 @@ export default function App() {
             <input name="pin" placeholder="PIN (select student first)" value={combinedPaymentForm.pin} readOnly />
             <input
               name="phone"
-              placeholder="Phone (optional)"
+              placeholder="Phone (optional — for WhatsApp)"
               value={combinedPaymentForm.phone}
               onChange={handleInput(setCombinedPaymentForm)}
             />
 
-            <div className="grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
+            <div className="inline" style={{ flexWrap: "wrap", gap: 12 }}>
+              <label className="inline" style={{ gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={paymentMode.college}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setPaymentMode((p) => ({ ...p, college: checked }));
+                    if (!checked) setCombinedPaymentForm((p) => ({ ...p, collegeAmountPaid: "" }));
+                  }}
+                />
+                College payment
+              </label>
+              <label className="inline" style={{ gap: 8, opacity: showHostel ? 1 : 0.7 }}>
+                <input
+                  type="checkbox"
+                  checked={paymentMode.hostel}
+                  disabled={!showHostel}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setPaymentMode((p) => ({ ...p, hostel: checked }));
+                    if (!checked) {
+                      setCombinedPaymentForm((p) => ({
+                        ...p,
+                        hostelAmountPaid: "",
+                        hostelMonthName: "",
+                        hostelYear: "",
+                        hostelMonth: ""
+                      }));
+                    }
+                  }}
+                />
+                Hostel payment
+              </label>
+            </div>
+
+            {paymentMode.college && (
               <div>
                 <label className="hint" style={{ marginTop: 0 }}>College Amount Paid</label>
                 <input
                   name="collegeAmountPaid"
                   type="number"
                   min="0"
-                  placeholder="0"
+                  placeholder="Enter amount"
                   value={combinedPaymentForm.collegeAmountPaid}
                   onChange={handleInput(setCombinedPaymentForm)}
                 />
               </div>
-              <div>
-                <label className="hint" style={{ marginTop: 0 }}>Hostel Amount Paid</label>
-                <input
-                  name="hostelAmountPaid"
-                  type="number"
-                  min="0"
-                  placeholder="0"
-                  value={combinedPaymentForm.hostelAmountPaid}
-                  onChange={handleInput(setCombinedPaymentForm)}
-                  disabled={!showHostel}
-                />
-              </div>
-            </div>
+            )}
 
-            <div className="grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
-              <div>
-                <label className="hint" style={{ marginTop: 0 }}>Hostel Month</label>
-                <select
-                  name="hostelMonthName"
-                  value={combinedPaymentForm.hostelMonthName}
-                  onChange={handleInput(setCombinedPaymentForm)}
-                  disabled={!showHostel}
-                >
-                  <option value="">Select month</option>
-                  {HOSTEL_MONTHS.map((m) => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="hint" style={{ marginTop: 0 }}>Hostel Year</label>
-                <select
-                  name="hostelYear"
-                  value={combinedPaymentForm.hostelYear}
-                  onChange={handleInput(setCombinedPaymentForm)}
-                  disabled={!showHostel}
-                >
-                  <option value="">Select year</option>
-                  {hostelYearOptions.map((y) => (
-                    <option key={y} value={y}>{y}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
+            {paymentMode.hostel && (
+              <>
+                <div>
+                  <label className="hint" style={{ marginTop: 0 }}>Hostel Amount Paid</label>
+                  <input
+                    name="hostelAmountPaid"
+                    type="number"
+                    min="0"
+                    placeholder="Enter amount"
+                    value={combinedPaymentForm.hostelAmountPaid}
+                    onChange={handleInput(setCombinedPaymentForm)}
+                  />
+                </div>
 
-            <button type="submit" disabled={!receiptData?.pin}>Save Payment & Generate Receipt</button>
+                <div className="grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                  <div>
+                    <label className="hint" style={{ marginTop: 0 }}>Hostel Month</label>
+                    <select
+                      name="hostelMonthName"
+                      value={combinedPaymentForm.hostelMonthName}
+                      onChange={handleInput(setCombinedPaymentForm)}
+                    >
+                      <option value="">Select month</option>
+                      {HOSTEL_MONTHS.map((m) => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="hint" style={{ marginTop: 0 }}>Hostel Year</label>
+                    <select
+                      name="hostelYear"
+                      value={combinedPaymentForm.hostelYear}
+                      onChange={handleInput(setCombinedPaymentForm)}
+                    >
+                      <option value="">Select year</option>
+                      {hostelYearOptions.map((y) => (
+                        <option key={y} value={y}>{y}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </>
+            )}
+
+            <button type="submit" disabled={!canSubmitPayment}>Save & Generate Receipt</button>
             {!receiptData?.pin && <p className="hint">Select a student PIN above first.</p>}
+            {receiptData?.pin && !canSubmitPayment && (
+              <p className="hint">Choose College and/or Hostel payment, then enter amount (and hostel month/year if needed).</p>
+            )}
             {!showHostel && (
-              <p className="hint">
-                Hostel fields are disabled because this student is not marked as a hostel student.
-              </p>
+              <p className="hint">Hostel payment is available only for hostel students.</p>
             )}
           </form>
         </div>
       </section>
 
+      <section className="card" ref={receiptCardRef}>
+        <h2>Step 3 — Receipt</h2>
+        <div className="inline" style={{ flexWrap: "wrap" }}>
+          <input
+            value={receiptPhone}
+            onChange={(e) => setReceiptPhone(e.target.value)}
+            placeholder="WhatsApp phone (optional)"
+          />
+          <button type="button" className="secondary" onClick={() => downloadReceiptPdf("auto")} disabled={!receiptData?.pin}>
+            Balance PDF
+          </button>
+          <button type="button" onClick={downloadPaymentReceiptPdf} disabled={!lastPaymentReceipt?.receiptNo}>
+            Payment Receipt PDF
+          </button>
+          {canWhatsApp && (
+            <button type="button" className="secondary" onClick={openWhatsApp} disabled={!receiptData?.pin}>
+              WhatsApp Message
+            </button>
+          )}
+        </div>
+
+        {lastPaymentReceipt?.receiptNo && (
+          <div className="receipt" style={{ marginTop: 10 }}>
+            <p style={{ marginTop: 0 }}>
+              <strong>Payment Receipt No:</strong> {lastPaymentReceipt.receiptNo}
+              {lastPaymentReceipt.receiptKey ? ` (Key: ${lastPaymentReceipt.receiptKey})` : ""}
+            </p>
+            <p className="hint" style={{ marginBottom: 0 }}>
+              You can share the receipt number (and key if required) to download the same PDF again.
+            </p>
+          </div>
+        )}
+
+        {receiptData && (
+          <div className="receipt" style={{ marginTop: 10 }}>
+            <p style={{ marginTop: 0 }}>
+              <strong>{receiptData.pin}</strong> — {receiptData.name} ({receiptData.course})
+            </p>
+            <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <p><strong>College Remaining:</strong> {receiptData.collegeBalance}</p>
+              <p><strong>Hostel Remaining:</strong> {receiptData.hostelBalance}</p>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {showAdvanced && (
       <section className="card grid">
         <div>
           <h2>Hostel Fee Master</h2>
@@ -1518,116 +1721,18 @@ export default function App() {
           )}
         </div>
       </section>
+      )}
 
-      <section className="card grid">
-        {showHostel && (
-          <div>
-            <h2>Hostel Payment</h2>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                submitForm("/api/hostel-payments", hostelPaymentForm, () =>
-                  setHostelPaymentForm((p) => ({ ...initialHostelPayment, pin: receiptData?.pin || "" }))
-                );
-              }}
-            >
-              <input name="pin" placeholder="PIN" value={hostelPaymentForm.pin} readOnly />
-              <div className="grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
-                <div>
-                  <label className="hint" style={{ marginTop: 0 }}>Month</label>
-                  <select
-                    value={parseMonthYear(hostelPaymentForm.month).month}
-                    onChange={(e) => setMonthYearField(setHostelPaymentForm, "month", "month", e.target.value)}
-                  >
-                    <option value="">Select month</option>
-                    {HOSTEL_MONTHS.map((m) => (
-                      <option key={m} value={m}>{m}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="hint" style={{ marginTop: 0 }}>Year</label>
-                  <select
-                    value={parseMonthYear(hostelPaymentForm.month).year}
-                    onChange={(e) => setMonthYearField(setHostelPaymentForm, "month", "year", e.target.value)}
-                  >
-                    <option value="">Select year</option>
-                    {hostelYearOptions.map((y) => (
-                      <option key={y} value={y}>{y}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <input name="phone" placeholder="Phone (optional)" value={hostelPaymentForm.phone} onChange={handleInput(setHostelPaymentForm)} />
-              <input
-                name="amountPaid"
-                type="number"
-                min="1"
-                placeholder="Amount Paid"
-                value={hostelPaymentForm.amountPaid}
-                onChange={handleInput(setHostelPaymentForm)}
-                required
-              />
-              <button type="submit" disabled={!receiptData?.pin}>Add Hostel Payment</button>
-              {!receiptData?.pin && <p className="hint">Select a student PIN above first.</p>}
-            </form>
-          </div>
-        )}
 
-        <div>
-          <h2>Receipt PDF / WhatsApp</h2>
-          <div className="inline">
-            <input
-              value={receiptPhone}
-              onChange={(e) => setReceiptPhone(e.target.value)}
-              placeholder="WhatsApp phone (optional)"
-            />
-            <button type="button" className="secondary" onClick={() => downloadReceiptPdf("auto")} disabled={!receiptData?.pin}>
-              Download PDF
-            </button>
-            <button type="button" className="secondary" onClick={downloadPaymentReceiptPdf} disabled={!lastPaymentReceipt?.receiptNo}>
-              Payment Receipt PDF
-            </button>
-            {canWhatsApp && (
-              <button type="button" onClick={openWhatsApp} disabled={!receiptData?.pin}>
-                WhatsApp Message
-              </button>
-            )}
-          </div>
-          {lastPaymentReceipt?.receiptNo && (
-            <p className="hint" style={{ marginTop: 8 }}>
-              Latest Payment Receipt: <b>{lastPaymentReceipt.receiptNo}</b>
-              {lastPaymentReceipt.receiptKey ? ` (Key: ${lastPaymentReceipt.receiptKey})` : ""}
-            </p>
-          )}
-          {receiptData && (
-            <div className="receipt">
-              <p><strong>College:</strong> {(receiptData.collegeKey || "default")} - {(receiptData.collegeName || "Unknown College")}</p>
-              <p><strong>Name:</strong> {receiptData.name}</p>
-              <p><strong>Course:</strong> {receiptData.course}</p>
-              <p><strong>Phone:</strong> {receiptData.phone || "-"}</p>
-              <p><strong>Receipt Key:</strong> {receiptData.receiptKey || "-"}</p>
-              <p><strong>College Total:</strong> {receiptData.collegeTotalFee}</p>
-              <p><strong>College Paid:</strong> {receiptData.collegePaid}</p>
-              <p><strong>College Balance:</strong> {receiptData.collegeBalance}</p>
-              <p><strong>Hostel Balance:</strong> {receiptData.hostelBalance}</p>
-              <p className="hint">
-                Generated: {receiptData.generatedOn ? new Date(receiptData.generatedOn).toLocaleString() : "-"}
-              </p>
-              {canWhatsApp && (
-                <p className="hint">WhatsApp can’t auto-attach the PDF; download it and attach manually.</p>
-              )}
-            </div>
-          )}
-        </div>
-      </section>
 
-      <section className="card">
-        <h2>Live Student Dashboard</h2>
-        <div className="inline" style={{ marginBottom: 8 }}>
-          <input
-            value={pinSearch}
-            onChange={(e) => setPinSearch(e.target.value)}
+       {showAdvanced && (
+         <>
+       <section className="card">
+         <h2>Live Student Dashboard</h2>
+         <div className="inline" style={{ marginBottom: 8 }}>
+           <input
+             value={pinSearch}
+             onChange={(e) => setPinSearch(e.target.value)}
             placeholder="Search by PIN (leave empty to show all)"
           />
         </div>
@@ -1672,14 +1777,14 @@ export default function App() {
               </tbody>
             </table>
           </div>
-        )}
-      </section>
+         )}
+       </section>
 
-      <section className="card">
-        <h2>Students</h2>
-        {students.length === 0 ? (
-          <p>No student records.</p>
-        ) : (
+       <section className="card">
+         <h2>Students</h2>
+         {students.length === 0 ? (
+           <p>No student records.</p>
+         ) : (
           <ul>
             {students.map((s) => (
               <li key={s._id}>
@@ -1687,10 +1792,12 @@ export default function App() {
               </li>
             ))}
           </ul>
-        )}
-      </section>
-        </>
-      )}
+           )}
+         </section>
+         </>
+       )}
+         </>
+       )}
     </div>
   );
 }

@@ -292,6 +292,38 @@ ul {
   flex: 1;
 }
 
+.stepsBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.steps {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+}
+
+.steps li {
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: rgba(255, 255, 255, 0.65);
+  color: rgba(15, 23, 42, 0.92);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.steps li.done {
+  border-color: rgba(99, 102, 241, 0.35);
+  background: linear-gradient(135deg, var(--primaryA), var(--primaryB));
+  color: rgba(255, 255, 255, 0.95);
+}
+
 .receipt {
   margin-top: 10px;
   border: 1px solid rgba(226, 232, 240, 0.9);
