@@ -550,7 +550,7 @@ app.post("/api/auth/change-password", authRequired, async (req, res) => {
 });
 
 // Billing routes: only logged-in staff/admin can create/update data.
-app.post("/api/students", authRequired, anyRoleRequired(BILLING_ROLES), async (req, res) => {
+app.post("/api/students", authRequired, roleRequired("admin"), async (req, res) => {
   try {
     const { pin, name, course, phone, collegeTotalFee, hasHostel } = req.body;
     if (!pin || !name || !course || collegeTotalFee === undefined) {
@@ -585,7 +585,7 @@ app.post("/api/students", authRequired, anyRoleRequired(BILLING_ROLES), async (r
   }
 });
 
-app.patch("/api/students/:pin/hostel", authRequired, anyRoleRequired(BILLING_ROLES), async (req, res) => {
+app.patch("/api/students/:pin/hostel", authRequired, roleRequired("admin"), async (req, res) => {
   try {
     const pin = String(req.params.pin || "").trim();
     if (!pin) return res.status(400).json({ message: "pin is required" });
@@ -1650,6 +1650,46 @@ app.post(
     }
   }
 );
+
+app.post("/api/student-submissions", authRequired, anyRoleRequired(["principal"]), async (req, res) => {
+  try {
+    const { pin, name, course, phone, hasHostel, collegeTotalFee } = req.body || {};
+    if (!pin || !name || !course || collegeTotalFee === undefined || collegeTotalFee === null) {
+      return res.status(400).json({ message: "pin, name, course, collegeTotalFee are required" });
+    }
+
+    const normalized = {
+      pin: String(pin || "").trim(),
+      name: String(name || "").trim(),
+      course: String(course || "").trim(),
+      phone: String(phone || "").trim(),
+      hasHostel: Boolean(hasHostel),
+      collegeTotalFee: toNumber(collegeTotalFee)
+    };
+
+    const record = await StudentImport.create({
+      collegeKey: normalizeCollegeKey(req.user?.collegeKey),
+      status: "pending",
+      uploadedBy: req.auth.sub,
+      uploadedByEmail: String(req.auth.email || ""),
+      uploadedByRole: String(req.user?.role || ""),
+      originalName: `single:${normalized.pin}`,
+      mimeType: "application/json",
+      size: 1,
+      rowsCount: 1,
+      rows: [normalized]
+    });
+
+    res.status(201).json({
+      importId: String(record._id),
+      status: record.status,
+      collegeKey: record.collegeKey,
+      rows: 1
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Student submission failed" });
+  }
+});
 
 app.get("/api/student-imports/my", authRequired, anyRoleRequired(["principal"]), async (req, res) => {
   try {

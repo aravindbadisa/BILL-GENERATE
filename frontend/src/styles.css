@@ -286,10 +286,19 @@ ul {
 .inline {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .inline input {
   flex: 1;
+}
+
+.inline > * {
+  min-width: 180px;
+}
+
+.inline button {
+  white-space: nowrap;
 }
 
 .receipt {

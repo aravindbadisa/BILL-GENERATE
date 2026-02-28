@@ -270,10 +270,10 @@ export default function App() {
         collegeTotalFee: Number(studentForm.collegeTotalFee || 0),
         hasHostel: Boolean(studentForm.hasHostel)
       };
-      await callApi("/api/students", "POST", payload);
-      setMessage("Student saved.");
+      await callApi("/api/student-submissions", "POST", payload);
+      setMessage("Student submitted to admin for approval.");
       setStudentForm(initialStudent);
-      await loadDashboard();
+      await Promise.all([loadDashboard(), loadMyStudentImports()]);
     } catch (e2) {
       setError(e2.message);
     }
@@ -357,26 +357,6 @@ export default function App() {
     .filter((item) => item.totalBalance <= 0)
     .sort((a, b) => String(a.pin || "").localeCompare(String(b.pin || "")));
 
-  const [studentHostelFlag, setStudentHostelFlag] = useState(false);
-
-  useEffect(() => {
-    setStudentHostelFlag(Boolean(receiptData?.hasHostel));
-  }, [receiptData?.pin, receiptData?.hasHostel]);
-
-  const updateStudentHostelFlag = async () => {
-    setMessage("");
-    setError("");
-    try {
-      const pin = String(receiptData?.pin || "").trim();
-      if (!pin) throw new Error("Select a student PIN first");
-      await callApi(`/api/students/${encodeURIComponent(pin)}/hostel`, "PATCH", { hasHostel: studentHostelFlag });
-      setMessage("Updated hostel status.");
-      await loadReceiptForPin(pin);
-      await loadDashboard();
-    } catch (e) {
-      setError(e.message);
-    }
-  };
 
   useEffect(() => {
     if (!receiptData?.pin) return;
@@ -1399,40 +1379,42 @@ export default function App() {
           {activeTab === "students" && (
             <>
               <section className="card grid">
-                <div>
-                  <h2>Add Student</h2>
-                  <form onSubmit={createStudent}>
-                    <input name="pin" placeholder="PIN / Roll No" value={studentForm.pin} onChange={handleInput(setStudentForm)} required />
-                    <input name="name" placeholder="Name" value={studentForm.name} onChange={handleInput(setStudentForm)} required />
-                    <input
-                      name="course"
-                      placeholder="Course"
-                      value={studentForm.course}
-                      onChange={handleInput(setStudentForm)}
-                      list="courseOptions"
-                      required
-                    />
-                    <input name="phone" placeholder="Phone (optional)" value={studentForm.phone} onChange={handleInput(setStudentForm)} />
-                    <input
-                      name="collegeTotalFee"
-                      type="number"
-                      min="0"
-                      placeholder="College Total Fee"
-                      value={studentForm.collegeTotalFee}
-                      onChange={handleInput(setStudentForm)}
-                      required
-                    />
-                    <label className="inline" style={{ gap: 8 }}>
+                {isPrincipal && (
+                  <div>
+                    <h2>Add Student (Submit to Admin)</h2>
+                    <form onSubmit={createStudent}>
+                      <input name="pin" placeholder="PIN / Roll No" value={studentForm.pin} onChange={handleInput(setStudentForm)} required />
+                      <input name="name" placeholder="Name" value={studentForm.name} onChange={handleInput(setStudentForm)} required />
                       <input
-                        type="checkbox"
-                        checked={Boolean(studentForm.hasHostel)}
-                        onChange={(e) => setStudentForm((p) => ({ ...p, hasHostel: e.target.checked }))}
+                        name="course"
+                        placeholder="Course"
+                        value={studentForm.course}
+                        onChange={handleInput(setStudentForm)}
+                        list="courseOptions"
+                        required
                       />
-                      Hostel student
-                    </label>
-                    <button type="submit">Save Student</button>
-                  </form>
-                </div>
+                      <input name="phone" placeholder="Phone (optional)" value={studentForm.phone} onChange={handleInput(setStudentForm)} />
+                      <input
+                        name="collegeTotalFee"
+                        type="number"
+                        min="0"
+                        placeholder="College Total Fee"
+                        value={studentForm.collegeTotalFee}
+                        onChange={handleInput(setStudentForm)}
+                        required
+                      />
+                      <label className="inline" style={{ gap: 8 }}>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(studentForm.hasHostel)}
+                          onChange={(e) => setStudentForm((p) => ({ ...p, hasHostel: e.target.checked }))}
+                        />
+                        Hostel student
+                      </label>
+                      <button type="submit">Submit to Admin</button>
+                    </form>
+                  </div>
+                )}
 
                 <div>
                   <h2>Students With Balance</h2>
@@ -1793,19 +1775,7 @@ export default function App() {
                       <p><strong>Phone:</strong> {receiptData.phone || "-"}</p>
                       <p><strong>Receipt Key:</strong> {receiptData.receiptKey || "-"}</p>
                       <p><strong>College Balance:</strong> {receiptData.collegeBalance}</p>
-                      <div className="inline" style={{ marginTop: 8 }}>
-                        <label className="inline" style={{ gap: 8 }}>
-                          <input
-                            type="checkbox"
-                            checked={studentHostelFlag}
-                            onChange={(e) => setStudentHostelFlag(e.target.checked)}
-                          />
-                          Hostel student
-                        </label>
-                        <button type="button" className="secondary" onClick={updateStudentHostelFlag}>
-                          Update
-                        </button>
-                      </div>
+                      <p><strong>Hostel Student:</strong> {receiptData.hasHostel ? "Yes" : "No"}</p>
                       {showHostel ? (
                         <p><strong>Hostel Balance:</strong> {receiptData.hostelBalance}</p>
                       ) : (
