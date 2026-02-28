@@ -11,7 +11,7 @@ const resolveApiBase = () => {
 const API_BASE = resolveApiBase();
 const TOKEN_KEY = "billing_token";
 
-const initialStudent = { pin: "", name: "", course: "", phone: "", collegeTotalFee: "" };
+const initialStudent = { pin: "", name: "", course: "", phone: "", collegeTotalFee: "", hasHostel: false };
 const initialCombinedPayment = {
   pin: "",
   phone: "",
@@ -72,6 +72,8 @@ export default function App() {
   const [receiptLoading, setReceiptLoading] = useState(false);
   const [pinSearch, setPinSearch] = useState("");
   const [lastPaymentReceipt, setLastPaymentReceipt] = useState(null);
+  const [studentForm, setStudentForm] = useState(initialStudent);
+  const [activeTab, setActiveTab] = useState("students");
 
   const hostelYearOptions = (() => {
     const now = new Date();
@@ -249,6 +251,34 @@ export default function App() {
     }
   };
 
+  const createStudent = async (e) => {
+    e.preventDefault();
+    setMessage("");
+    setError("");
+    try {
+      if (!studentForm.pin || !studentForm.name || !studentForm.course) {
+        throw new Error("PIN, Name, Course are required");
+      }
+      if (studentForm.collegeTotalFee === "" || studentForm.collegeTotalFee === null) {
+        throw new Error("College Total Fee is required");
+      }
+      const payload = {
+        pin: String(studentForm.pin || "").trim(),
+        name: String(studentForm.name || "").trim(),
+        course: String(studentForm.course || "").trim(),
+        phone: String(studentForm.phone || "").trim(),
+        collegeTotalFee: Number(studentForm.collegeTotalFee || 0),
+        hasHostel: Boolean(studentForm.hasHostel)
+      };
+      await callApi("/api/students", "POST", payload);
+      setMessage("Student saved.");
+      setStudentForm(initialStudent);
+      await loadDashboard();
+    } catch (e2) {
+      setError(e2.message);
+    }
+  };
+
   const loadReceiptForPin = async (pinRaw) => {
     const pin = String(pinRaw || "").trim();
     if (!pin) return;
@@ -312,6 +342,20 @@ export default function App() {
         Number(receiptData.hostelPaid || 0) > 0 ||
         Number(receiptData.hostelBalance || 0) > 0
     );
+
+  const getTotalBalance = (item) =>
+    Number(item?.collegeBalance || 0) + Number(item?.hostelBalance || 0);
+
+  const balanceRows = dashboard.map((item) => ({
+    ...item,
+    totalBalance: getTotalBalance(item)
+  }));
+  const remainingBalance = balanceRows
+    .filter((item) => item.totalBalance > 0)
+    .sort((a, b) => b.totalBalance - a.totalBalance);
+  const clearedBalance = balanceRows
+    .filter((item) => item.totalBalance <= 0)
+    .sort((a, b) => String(a.pin || "").localeCompare(String(b.pin || "")));
 
   const [studentHostelFlag, setStudentHostelFlag] = useState(false);
 
@@ -407,6 +451,128 @@ export default function App() {
     } catch (e) {
       setError(e.message);
     }
+  };
+
+  const csvEscape = (value) => {
+    const raw = String(value ?? "");
+    if (/[\",\n]/.test(raw)) return `"${raw.replace(/\"/g, '""')}"`;
+    return raw;
+  };
+
+  const toBalanceCsv = (rows) => {
+    const headers = [
+      "PIN",
+      "Name",
+      "Course",
+      "College Total",
+      "College Paid",
+      "College Balance",
+      "Hostel Charged",
+      "Hostel Paid",
+      "Hostel Balance",
+      "Total Balance"
+    ];
+    const lines = rows.map((r) =>
+      [
+        r.pin,
+        r.name,
+        r.course,
+        r.collegeTotalFee,
+        r.collegePaid,
+        r.collegeBalance,
+        r.hostelCharged,
+        r.hostelPaid,
+        r.hostelBalance,
+        r.totalBalance
+      ]
+        .map(csvEscape)
+        .join(",")
+    );
+    return [headers.join(","), ...lines].join("\n");
+  };
+
+  const downloadBalanceCsv = (rows, filename) => {
+    if (!rows || rows.length === 0) {
+      setError("No rows to export");
+      return;
+    }
+    const csv = toBalanceCsv(rows);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename || "students.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadBalancePdf = (rows, title) => {
+    if (!rows || rows.length === 0) {
+      setError("No rows to export");
+      return;
+    }
+    const safeTitle = String(title || "Students").replace(/[<>]/g, "");
+    const html = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>${safeTitle}</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; color: #111827; }
+    h2 { margin: 0 0 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th, td { border: 1px solid #e2e8f0; padding: 6px 8px; text-align: left; }
+    th { background: #f8fafc; }
+  </style>
+</head>
+<body>
+  <h2>${safeTitle}</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>PIN</th>
+        <th>Name</th>
+        <th>Course</th>
+        <th>College Total</th>
+        <th>College Paid</th>
+        <th>College Balance</th>
+        <th>Hostel Charged</th>
+        <th>Hostel Paid</th>
+        <th>Hostel Balance</th>
+        <th>Total Balance</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows
+        .map(
+          (r) => `<tr>
+            <td>${r.pin ?? ""}</td>
+            <td>${r.name ?? ""}</td>
+            <td>${r.course ?? ""}</td>
+            <td>${r.collegeTotalFee ?? ""}</td>
+            <td>${r.collegePaid ?? ""}</td>
+            <td>${r.collegeBalance ?? ""}</td>
+            <td>${r.hostelCharged ?? ""}</td>
+            <td>${r.hostelPaid ?? ""}</td>
+            <td>${r.hostelBalance ?? ""}</td>
+            <td>${r.totalBalance ?? ""}</td>
+          </tr>`\n        )
+        .join(\"\\n\")}
+    </tbody>
+  </table>
+</body>
+</html>`;
+    const win = window.open("", "_blank", "noopener,noreferrer,width=900,height=700");
+    if (!win) {
+      setError("Popup blocked. Allow popups to download PDF.");
+      return;
+    }
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    win.print();
   };
 
   const canWhatsApp = ["principal", "admin"].includes(me?.role);
@@ -1205,56 +1371,577 @@ export default function App() {
 
       {!isAdmin && (
         <>
-          <section className="card grid">
-            {isPrincipal && (
-              <div>
-                <h2>Principal: Submit Students (Excel/CSV)</h2>
-                <div className="inline">
-                  <button type="button" className="secondary" onClick={downloadStudentsTemplate}>
-                    Download Students Template
-                  </button>
-                </div>
-                <form onSubmit={submitStudentImport}>
-                  <input
-                    type="file"
-                    accept=".xlsx,.xls,.csv"
-                    onChange={(e) => setStudentImportFile(e.target.files?.[0] || null)}
-                    required
-                  />
-                  <button type="submit">Upload & Submit to Admin</button>
-                </form>
-                <p className="hint">
-                  Admin will review and approve. After approval, students will be created in your college database.
-                </p>
+          <div className="tabs">
+            <button
+              type="button"
+              className={`tab ${activeTab === "students" ? "active" : ""}`}
+              onClick={() => setActiveTab("students")}
+            >
+              Students
+            </button>
+            <button
+              type="button"
+              className={`tab ${activeTab === "workspace" ? "active" : ""}`}
+              onClick={() => setActiveTab("workspace")}
+            >
+              Billing Workspace
+            </button>
+            <button
+              type="button"
+              className={`tab ${activeTab === "payment" ? "active" : ""}`}
+              onClick={() => setActiveTab("payment")}
+            >
+              Payment
+            </button>
+          </div>
 
-                {myStudentImports.length > 0 && (
-                  <div className="tableWrap" style={{ marginTop: 12 }}>
-                    <table style={{ minWidth: 720 }}>
-                      <thead>
-                        <tr>
-                          <th>Date</th>
-                          <th>File</th>
-                          <th>Status</th>
-                          <th>Rows</th>
-                          <th>Note</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {myStudentImports.map((r) => (
-                          <tr key={String(r._id)}>
-                            <td>{new Date(r.createdAt).toLocaleString()}</td>
-                            <td>{r.originalName}</td>
-                            <td>
-                              <span className={`statusPill ${r.status}`}>{r.status}</span>
-                            </td>
-                            <td>{(r.rowsCount ?? r.rows?.length) || "-"}</td>
-                            <td>{r.decisionNote || "-"}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+          {activeTab === "students" && (
+            <>
+              <section className="card grid">
+                <div>
+                  <h2>Add Student</h2>
+                  <form onSubmit={createStudent}>
+                    <input name="pin" placeholder="PIN / Roll No" value={studentForm.pin} onChange={handleInput(setStudentForm)} required />
+                    <input name="name" placeholder="Name" value={studentForm.name} onChange={handleInput(setStudentForm)} required />
+                    <input
+                      name="course"
+                      placeholder="Course"
+                      value={studentForm.course}
+                      onChange={handleInput(setStudentForm)}
+                      list="courseOptions"
+                      required
+                    />
+                    <input name="phone" placeholder="Phone (optional)" value={studentForm.phone} onChange={handleInput(setStudentForm)} />
+                    <input
+                      name="collegeTotalFee"
+                      type="number"
+                      min="0"
+                      placeholder="College Total Fee"
+                      value={studentForm.collegeTotalFee}
+                      onChange={handleInput(setStudentForm)}
+                      required
+                    />
+                    <label className="inline" style={{ gap: 8 }}>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(studentForm.hasHostel)}
+                        onChange={(e) => setStudentForm((p) => ({ ...p, hasHostel: e.target.checked }))}
+                      />
+                      Hostel student
+                    </label>
+                    <button type="submit">Save Student</button>
+                  </form>
+                </div>
+
+                <div>
+                  <h2>Students With Balance</h2>
+                  <div className="inline" style={{ marginBottom: 8 }}>
+                    <button type="button" className="secondary" onClick={() => downloadBalanceCsv(remainingBalance, "students_with_balance.csv")}>
+                      Download Excel (CSV)
+                    </button>
+                    <button type="button" className="secondary" onClick={() => downloadBalancePdf(remainingBalance, "Students With Balance") }>
+                      Download PDF
+                    </button>
                   </div>
-                )}
+                  {remainingBalance.length === 0 ? (
+                    <p>No students with balance.</p>
+                  ) : (
+                    <div className="tableWrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>PIN</th>
+                            <th>Name</th>
+                            <th>Course</th>
+                            <th>Total Balance</th>
+                            <th>College Balance</th>
+                            <th>Hostel Balance</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {remainingBalance.map((item) => (
+                            <tr key={item.pin} onClick={() => setReceiptPin(item.pin)} style={{ cursor: "pointer" }}>
+                              <td>{item.pin}</td>
+                              <td>{item.name}</td>
+                              <td>{item.course}</td>
+                              <td>{item.totalBalance}</td>
+                              <td>{item.collegeBalance}</td>
+                              <td>{item.hostelBalance}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              <section className="card grid">
+                <div>
+                  <h2>Students Cleared</h2>
+                  <div className="inline" style={{ marginBottom: 8 }}>
+                    <button type="button" className="secondary" onClick={() => downloadBalanceCsv(clearedBalance, "students_cleared.csv")}>
+                      Download Excel (CSV)
+                    </button>
+                    <button type="button" className="secondary" onClick={() => downloadBalancePdf(clearedBalance, "Students Cleared") }>
+                      Download PDF
+                    </button>
+                  </div>
+                  {clearedBalance.length === 0 ? (
+                    <p>No cleared students yet.</p>
+                  ) : (
+                    <div className="tableWrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>PIN</th>
+                            <th>Name</th>
+                            <th>Course</th>
+                            <th>Total Balance</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {clearedBalance.map((item) => (
+                            <tr key={item.pin} onClick={() => setReceiptPin(item.pin)} style={{ cursor: "pointer" }}>
+                              <td>{item.pin}</td>
+                              <td>{item.name}</td>
+                              <td>{item.course}</td>
+                              <td>{item.totalBalance}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <h2>All Students</h2>
+                  {students.length === 0 ? (
+                    <p>No student records.</p>
+                  ) : (
+                    <ul>
+                      {students.map((s) => (
+                        <li key={s._id}>
+                          {s.pin} | {s.name} | {s.course}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </section>
+
+              {isPrincipal && (
+                <section className="card">
+                  <h2>Principal: Submit Students (Excel/CSV)</h2>
+                  <div className="inline">
+                    <button type="button" className="secondary" onClick={downloadStudentsTemplate}>
+                      Download Students Template
+                    </button>
+                  </div>
+                  <form onSubmit={submitStudentImport}>
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls,.csv"
+                      onChange={(e) => setStudentImportFile(e.target.files?.[0] || null)}
+                      required
+                    />
+                    <button type="submit">Upload & Submit to Admin</button>
+                  </form>
+                  <p className="hint">
+                    Admin will review and approve. After approval, students will be created in your college database.
+                  </p>
+
+                  {myStudentImports.length > 0 && (
+                    <div className="tableWrap" style={{ marginTop: 12 }}>
+                      <table style={{ minWidth: 720 }}>
+                        <thead>
+                          <tr>
+                            <th>Date</th>
+                            <th>File</th>
+                            <th>Status</th>
+                            <th>Rows</th>
+                            <th>Note</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {myStudentImports.map((r) => (
+                            <tr key={String(r._id)}>
+                              <td>{new Date(r.createdAt).toLocaleString()}</td>
+                              <td>{r.originalName}</td>
+                              <td>
+                                <span className={`statusPill ${r.status}`}>{r.status}</span>
+                              </td>
+                              <td>{(r.rowsCount ?? r.rows?.length) || "-"}</td>
+                              <td>{r.decisionNote || "-"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </section>
+              )}
+            </>
+          )}
+
+          {activeTab === "workspace" && (
+            <>
+              <section className="card">
+                <h2>Billing Workspace</h2>
+                <div className="grid">
+                  <div>
+                    <h3>Live Student Dashboard</h3>
+                    <div className="inline" style={{ marginBottom: 8 }}>
+                      <input
+                        value={pinSearch}
+                        onChange={(e) => setPinSearch(e.target.value)}
+                        placeholder="Search by PIN (leave empty to show all)"
+                      />
+                    </div>
+                    {dashboard.length === 0 ? (
+                      <p>No students yet.</p>
+                    ) : (
+                      <div className="tableWrap">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>PIN</th>
+                              <th>Name</th>
+                              <th>Course</th>
+                              <th>College Total</th>
+                              <th>College Paid</th>
+                              <th>College Balance</th>
+                              <th>Hostel Charged</th>
+                              <th>Hostel Paid</th>
+                              <th>Hostel Balance</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {dashboard
+                              .filter((item) => {
+                                const q = String(pinSearch || "").trim();
+                                if (!q) return true;
+                                return String(item.pin || "").includes(q);
+                              })
+                              .map((item) => (
+                                <tr key={item.pin} style={{ cursor: "pointer" }} onClick={() => setReceiptPin(item.pin)}>
+                                  <td>{item.pin}</td>
+                                  <td>{item.name}</td>
+                                  <td>{item.course}</td>
+                                  <td>{item.collegeTotalFee}</td>
+                                  <td>{item.collegePaid}</td>
+                                  <td>{item.collegeBalance}</td>
+                                  <td>{item.hostelCharged}</td>
+                                  <td>{item.hostelPaid}</td>
+                                  <td>{item.hostelBalance}</td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <h3>Hostel Fee Master</h3>
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        submitForm("/api/hostel-fees", hostelFeeForm, () => setHostelFeeForm(initialHostelFee));
+                      }}
+                    >
+                      <div className="grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                        <div>
+                          <label className="hint" style={{ marginTop: 0 }}>Month</label>
+                          <select
+                            value={parseMonthYear(hostelFeeForm.month).month}
+                            onChange={(e) => setMonthYearField(setHostelFeeForm, "month", "month", e.target.value)}
+                          >
+                            <option value="">Select month</option>
+                            {HOSTEL_MONTHS.map((m) => (
+                              <option key={m} value={m}>{m}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="hint" style={{ marginTop: 0 }}>Year</label>
+                          <select
+                            value={parseMonthYear(hostelFeeForm.month).year}
+                            onChange={(e) => setMonthYearField(setHostelFeeForm, "month", "year", e.target.value)}
+                          >
+                            <option value="">Select year</option>
+                            {hostelYearOptions.map((y) => (
+                              <option key={y} value={y}>{y}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                      <input
+                        name="monthlyFee"
+                        type="number"
+                        min="0"
+                        placeholder="Monthly Fee"
+                        value={hostelFeeForm.monthlyFee}
+                        onChange={handleInput(setHostelFeeForm)}
+                        required
+                      />
+                      <button type="submit">Save Month Fee</button>
+                    </form>
+                    <p className="hint" style={{ marginTop: 8 }}>
+                      Set hostel monthly fee first. Attendance is available only for hostel students.
+                    </p>
+                  </div>
+
+                  <div>
+                    <h3>Hostel Attendance</h3>
+                    {!showHostel ? (
+                      <p className="hint" style={{ marginTop: 8 }}>
+                        Select a hostel student (enable “Hostel student” in receipt lookup) to add attendance.
+                      </p>
+                    ) : (
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          submitForm("/api/hostel-attendance", attendanceForm, () =>
+                            setAttendanceForm((p) => ({ ...initialAttendance, pin: receiptData?.pin || "" }))
+                          );
+                        }}
+                      >
+                        <input name="pin" placeholder="PIN" value={attendanceForm.pin} readOnly />
+                        <div className="grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                          <div>
+                            <label className="hint" style={{ marginTop: 0 }}>Month</label>
+                            <select
+                              value={parseMonthYear(attendanceForm.month).month}
+                              onChange={(e) => setMonthYearField(setAttendanceForm, "month", "month", e.target.value)}
+                            >
+                              <option value="">Select month</option>
+                              {HOSTEL_MONTHS.map((m) => (
+                                <option key={m} value={m}>{m}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="hint" style={{ marginTop: 0 }}>Year</label>
+                            <select
+                              value={parseMonthYear(attendanceForm.month).year}
+                              onChange={(e) => setMonthYearField(setAttendanceForm, "month", "year", e.target.value)}
+                            >
+                              <option value="">Select year</option>
+                              {hostelYearOptions.map((y) => (
+                                <option key={y} value={y}>{y}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                        <input
+                          name="totalDays"
+                          type="number"
+                          min="1"
+                          placeholder="Total Days in Month"
+                          value={attendanceForm.totalDays}
+                          onChange={handleInput(setAttendanceForm)}
+                          required
+                        />
+                        <input
+                          name="daysStayed"
+                          type="number"
+                          min="0"
+                          placeholder="Days Stayed"
+                          value={attendanceForm.daysStayed}
+                          onChange={handleInput(setAttendanceForm)}
+                          required
+                        />
+                        <button type="submit" disabled={!receiptData?.pin}>Add Attendance</button>
+                        {!receiptData?.pin && <p className="hint">Select a student PIN above first.</p>}
+                      </form>
+                    )}
+                  </div>
+                </div>
+              </section>
+            </>
+          )}
+
+          {activeTab === "payment" && (
+            <>
+              <section className="card grid">
+                <div>
+                  <h2>Student & Receipt Lookup (Roll No)</h2>
+                  <div className="inline">
+                    <input
+                      value={receiptPin}
+                      onChange={(e) => setReceiptPin(e.target.value)}
+                      placeholder="Enter roll no / PIN"
+                    />
+                    <button type="button" className="secondary" onClick={clearSelectedStudent}>
+                      Clear
+                    </button>
+                  </div>
+
+                  {receiptLoading ? (
+                    <p className="hint" style={{ marginTop: 10 }}>
+                      Loading student...
+                    </p>
+                  ) : receiptData ? (
+                    <div className="receipt" style={{ marginTop: 10 }}>
+                      <p><strong>College:</strong> {(receiptData.collegeKey || "default")} - {(receiptData.collegeName || "Unknown College")}</p>
+                      <p><strong>PIN:</strong> {receiptData.pin}</p>
+                      <p><strong>Name:</strong> {receiptData.name}</p>
+                      <p><strong>Course:</strong> {receiptData.course}</p>
+                      <p><strong>Phone:</strong> {receiptData.phone || "-"}</p>
+                      <p><strong>Receipt Key:</strong> {receiptData.receiptKey || "-"}</p>
+                      <p><strong>College Balance:</strong> {receiptData.collegeBalance}</p>
+                      <div className="inline" style={{ marginTop: 8 }}>
+                        <label className="inline" style={{ gap: 8 }}>
+                          <input
+                            type="checkbox"
+                            checked={studentHostelFlag}
+                            onChange={(e) => setStudentHostelFlag(e.target.checked)}
+                          />
+                          Hostel student
+                        </label>
+                        <button type="button" className="secondary" onClick={updateStudentHostelFlag}>
+                          Update
+                        </button>
+                      </div>
+                      {showHostel ? (
+                        <p><strong>Hostel Balance:</strong> {receiptData.hostelBalance}</p>
+                      ) : (
+                        <p className="hint">This student is college-only (no hostel).</p>
+                      )}
+                      <p className="hint" style={{ marginTop: 6 }}>
+                        Generated: {receiptData.generatedOn ? new Date(receiptData.generatedOn).toLocaleString() : "-"}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="hint" style={{ marginTop: 10 }}>
+                      Search by roll no / PIN to view receipts.
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <h2>Payment (College + Hostel)</h2>
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      submitForm("/api/payments", combinedPaymentForm, () =>
+                        setCombinedPaymentForm((p) => ({ ...initialCombinedPayment, pin: receiptData?.pin || "" }))
+                      );
+                    }}
+                  >
+                    <input name="pin" placeholder="PIN (select student first)" value={combinedPaymentForm.pin} readOnly />
+                    <input
+                      name="phone"
+                      placeholder="Phone (optional)"
+                      value={combinedPaymentForm.phone}
+                      onChange={handleInput(setCombinedPaymentForm)}
+                    />
+
+                    <div className="grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                      <div>
+                        <label className="hint" style={{ marginTop: 0 }}>College Amount Paid</label>
+                        <input
+                          name="collegeAmountPaid"
+                          type="number"
+                          min="0"
+                          placeholder="0"
+                          value={combinedPaymentForm.collegeAmountPaid}
+                          onChange={handleInput(setCombinedPaymentForm)}
+                        />
+                      </div>
+                      <div>
+                        <label className="hint" style={{ marginTop: 0 }}>Hostel Amount Paid</label>
+                        <input
+                          name="hostelAmountPaid"
+                          type="number"
+                          min="0"
+                          placeholder="0"
+                          value={combinedPaymentForm.hostelAmountPaid}
+                          onChange={handleInput(setCombinedPaymentForm)}
+                          disabled={!showHostel}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                      <div>
+                        <label className="hint" style={{ marginTop: 0 }}>Hostel Month</label>
+                        <select
+                          name="hostelMonthName"
+                          value={combinedPaymentForm.hostelMonthName}
+                          onChange={handleInput(setCombinedPaymentForm)}
+                          disabled={!showHostel}
+                        >
+                          <option value="">Select month</option>
+                          {HOSTEL_MONTHS.map((m) => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="hint" style={{ marginTop: 0 }}>Hostel Year</label>
+                        <select
+                          name="hostelYear"
+                          value={combinedPaymentForm.hostelYear}
+                          onChange={handleInput(setCombinedPaymentForm)}
+                          disabled={!showHostel}
+                        >
+                          <option value="">Select year</option>
+                          {hostelYearOptions.map((y) => (
+                            <option key={y} value={y}>{y}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <button type="submit" disabled={!receiptData?.pin}>Save Payment & Generate Receipt</button>
+                    {!receiptData?.pin && <p className="hint">Select a student PIN above first.</p>}
+                    {!showHostel && (
+                      <p className="hint">
+                        Hostel fields are disabled because this student is not marked as a hostel student.
+                      </p>
+                    )}
+
+                    <div className="inline" style={{ marginTop: 10 }}>
+                      <input
+                        value={receiptPhone}
+                        onChange={(e) => setReceiptPhone(e.target.value)}
+                        placeholder="WhatsApp phone (optional)"
+                      />
+                      <button type="button" className="secondary" onClick={() => downloadReceiptPdf("auto")} disabled={!receiptData?.pin}>
+                        Download PDF
+                      </button>
+                      <button type="button" className="secondary" onClick={downloadPaymentReceiptPdf} disabled={!lastPaymentReceipt?.receiptNo}>
+                        Payment Receipt PDF
+                      </button>
+                      {canWhatsApp && (
+                        <button type="button" onClick={openWhatsApp} disabled={!receiptData?.pin}>
+                          WhatsApp Message
+                        </button>
+                      )}
+                    </div>
+
+                    {lastPaymentReceipt?.receiptNo && (
+                      <p className="hint" style={{ marginTop: 8 }}>
+                        Latest Payment Receipt: <b>{lastPaymentReceipt.receiptNo}</b>
+                        {lastPaymentReceipt.receiptKey ? ` (Key: ${lastPaymentReceipt.receiptKey})` : ""}
+                      </p>
+                    )}
+                    {canWhatsApp && (
+                      <p className="hint" style={{ marginTop: 6 }}>
+                        WhatsApp can’t auto-attach the PDF; download it and attach manually.
+                      </p>
+                    )}
+                  </form>
+                </div>
+              </section>
+            </>
+          )}
+        </>
+      )}
+
               </div>
             )}
 

@@ -312,6 +312,31 @@ ul {
   gap: 10px;
 }
 
+.tabs {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 12px 0 16px;
+}
+
+.tab {
+  background: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  padding: 10px 14px;
+  border-radius: 999px;
+  min-height: 40px;
+  cursor: pointer;
+  transition: transform 120ms ease, filter 120ms ease, box-shadow 120ms ease;
+}
+
+.tab.active {
+  background: linear-gradient(135deg, var(--primaryA), var(--primaryB));
+  color: #fff;
+  box-shadow: 0 10px 24px rgba(2, 6, 23, 0.22);
+  border-color: transparent;
+}
+
 .badge {
   display: inline-block;
   padding: 6px 10px;
