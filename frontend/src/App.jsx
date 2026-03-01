@@ -76,6 +76,7 @@ export default function App() {
   const [lastPaymentReceipt, setLastPaymentReceipt] = useState(null);
   const [studentForm, setStudentForm] = useState(initialStudent);
   const [activeTab, setActiveTab] = useState("students");
+  const [bulkDeletePins, setBulkDeletePins] = useState("");
 
   const hostelYearOptions = (() => {
     const now = new Date();
@@ -361,6 +362,47 @@ export default function App() {
       setMessage("Updated hostel status.");
       await loadReceiptForPin(pin);
       await loadDashboard();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const deleteSingleStudent = async (pinRaw) => {
+    const pin = String(pinRaw || "").trim();
+    if (!pin) return;
+    const ok = window.confirm(`Delete student ${pin}? This will remove related payments and receipts.`);
+    if (!ok) return;
+    setMessage("");
+    setError("");
+    try {
+      await callApi(`/api/students/${encodeURIComponent(pin)}`, "DELETE");
+      if (String(receiptPin || "").trim() === pin) clearSelectedStudent();
+      await loadDashboard();
+      setMessage(`Deleted student ${pin}.`);
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const deleteBulkStudents = async () => {
+    const pins = String(bulkDeletePins || "")
+      .split(/[\s,]+/)
+      .map((p) => p.trim())
+      .filter(Boolean);
+    if (pins.length === 0) {
+      setError("Enter at least one PIN");
+      return;
+    }
+    const ok = window.confirm(`Delete ${pins.length} students? This will remove related payments and receipts.`);
+    if (!ok) return;
+    setMessage("");
+    setError("");
+    try {
+      await callApi("/api/students/delete", "POST", { pins });
+      if (pins.includes(String(receiptPin || "").trim())) clearSelectedStudent();
+      setBulkDeletePins("");
+      await loadDashboard();
+      setMessage(`Deleted ${pins.length} students.`);
     } catch (e) {
       setError(e.message);
     }
@@ -1583,11 +1625,33 @@ export default function App() {
                   ) : (
                     <ul>
                       {students.map((s) => (
-                        <li key={s._id}>
-                          {s.pin} | {s.name} | {s.course}
+                        <li key={s._id} className="inline" style={{ alignItems: "center" }}>
+                          <span style={{ flex: 1 }}>
+                            {s.pin} | {s.name} | {s.course}
+                          </span>
+                          {me?.role === "principal" && (
+                            <button type="button" className="secondary" onClick={() => deleteSingleStudent(s.pin)}>
+                              Delete
+                            </button>
+                          )}
                         </li>
                       ))}
                     </ul>
+                  )}
+
+                  {me?.role === "principal" && (
+                    <div style={{ marginTop: 12 }}>
+                      <h3>Delete Multiple Students</h3>
+                      <textarea
+                        rows={4}
+                        placeholder="Enter PINs separated by comma, space, or new line"
+                        value={bulkDeletePins}
+                        onChange={(e) => setBulkDeletePins(e.target.value)}
+                      />
+                      <button type="button" className="secondary" onClick={deleteBulkStudents}>
+                        Delete Students
+                      </button>
+                    </div>
                   )}
                 </div>
               </section>

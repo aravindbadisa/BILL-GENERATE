@@ -626,6 +626,51 @@ app.get("/api/students", authRequired, anyRoleRequired(BILLING_ROLES), async (re
   }
 });
 
+const deleteStudentData = async (collegeKey, pin) => {
+  await Promise.all([
+    Student.deleteOne({ ...collegeMatch(collegeKey), pin }),
+    CollegePayment.deleteMany({ ...collegeMatch(collegeKey), pin }),
+    HostelAttendance.deleteMany({ ...collegeMatch(collegeKey), pin }),
+    HostelPayment.deleteMany({ ...collegeMatch(collegeKey), pin }),
+    PaymentReceipt.deleteMany({ ...collegeMatch(collegeKey), pin })
+  ]);
+};
+
+app.delete("/api/students/:pin", authRequired, anyRoleRequired(["admin", "principal"]), async (req, res) => {
+  try {
+    const pin = String(req.params.pin || "").trim();
+    if (!pin) return res.status(400).json({ message: "pin is required" });
+
+    const collegeKey =
+      req.user.role === "admin"
+        ? normalizeCollegeKey(req.query?.collegeKey || req.body?.collegeKey)
+        : normalizeCollegeKey(req.user.collegeKey);
+
+    await deleteStudentData(collegeKey, pin);
+    res.json({ ok: true, pin });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to delete student" });
+  }
+});
+
+app.post("/api/students/delete", authRequired, anyRoleRequired(["admin", "principal"]), async (req, res) => {
+  try {
+    const pinsRaw = Array.isArray(req.body?.pins) ? req.body.pins : [];
+    const pins = pinsRaw.map((p) => String(p || "").trim()).filter(Boolean);
+    if (pins.length === 0) return res.status(400).json({ message: "pins are required" });
+
+    const collegeKey =
+      req.user.role === "admin"
+        ? normalizeCollegeKey(req.body?.collegeKey)
+        : normalizeCollegeKey(req.user.collegeKey);
+
+    await Promise.all(pins.map((pin) => deleteStudentData(collegeKey, pin)));
+    res.json({ ok: true, deleted: pins.length });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to delete students" });
+  }
+});
+
 app.post(
   "/api/college-payments",
   authRequired,
