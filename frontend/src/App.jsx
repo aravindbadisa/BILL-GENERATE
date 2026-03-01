@@ -1383,6 +1383,59 @@ export default function App() {
           </div>
 
           {activeTab === "students" && (
+
+
+              {isPrincipal && (
+                <section className="card">
+                  <h2>Principal: Submit Students (Excel/CSV)</h2>
+                  <div className="inline">
+                    <button type="button" className="secondary" onClick={downloadStudentsTemplate}>
+                      Download Students Template
+                    </button>
+                  </div>
+                  <form onSubmit={submitStudentImport}>
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls,.csv"
+                      onChange={(e) => setStudentImportFile(e.target.files?.[0] || null)}
+                      required
+                    />
+                    <button type="submit">Upload & Submit to Admin</button>
+                  </form>
+                  <p className="hint">
+                    Admin will review and approve. After approval, students will be created in your college database.
+                  </p>
+
+                  {myStudentImports.length > 0 && (
+                    <div className="tableWrap" style={{ marginTop: 12 }}>
+                      <table style={{ minWidth: 720 }}>
+                        <thead>
+                          <tr>
+                            <th>Date</th>
+                            <th>File</th>
+                            <th>Status</th>
+                            <th>Rows</th>
+                            <th>Note</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {myStudentImports.map((r) => (
+                            <tr key={String(r._id)}>
+                              <td>{new Date(r.createdAt).toLocaleString()}</td>
+                              <td>{r.originalName}</td>
+                              <td>
+                                <span className={`statusPill ${r.status}`}>{r.status}</span>
+                              </td>
+                              <td>{(r.rowsCount ?? r.rows?.length) || "-"}</td>
+                              <td>{r.decisionNote || "-"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </section>
+              )}
             <>
               <section className="card grid">
                 {isPrincipal && (
@@ -1519,58 +1572,6 @@ export default function App() {
                   )}
                 </div>
               </section>
-
-              {isPrincipal && (
-                <section className="card">
-                  <h2>Principal: Submit Students (Excel/CSV)</h2>
-                  <div className="inline">
-                    <button type="button" className="secondary" onClick={downloadStudentsTemplate}>
-                      Download Students Template
-                    </button>
-                  </div>
-                  <form onSubmit={submitStudentImport}>
-                    <input
-                      type="file"
-                      accept=".xlsx,.xls,.csv"
-                      onChange={(e) => setStudentImportFile(e.target.files?.[0] || null)}
-                      required
-                    />
-                    <button type="submit">Upload & Submit to Admin</button>
-                  </form>
-                  <p className="hint">
-                    Admin will review and approve. After approval, students will be created in your college database.
-                  </p>
-
-                  {myStudentImports.length > 0 && (
-                    <div className="tableWrap" style={{ marginTop: 12 }}>
-                      <table style={{ minWidth: 720 }}>
-                        <thead>
-                          <tr>
-                            <th>Date</th>
-                            <th>File</th>
-                            <th>Status</th>
-                            <th>Rows</th>
-                            <th>Note</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {myStudentImports.map((r) => (
-                            <tr key={String(r._id)}>
-                              <td>{new Date(r.createdAt).toLocaleString()}</td>
-                              <td>{r.originalName}</td>
-                              <td>
-                                <span className={`statusPill ${r.status}`}>{r.status}</span>
-                              </td>
-                              <td>{(r.rowsCount ?? r.rows?.length) || "-"}</td>
-                              <td>{r.decisionNote || "-"}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </section>
-              )}
             </>
           )}
 
