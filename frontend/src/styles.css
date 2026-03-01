@@ -132,6 +132,7 @@ body::after {
   box-shadow: var(--shadow);
   backdrop-filter: blur(10px);
   animation: cardIn 260ms ease both;
+  overflow: hidden;
 }
 
 .grid {
@@ -255,12 +256,13 @@ button:active {
 
 .tableWrap {
   overflow-x: auto;
+  max-width: 100%;
 }
 
 table {
   border-collapse: collapse;
   width: 100%;
-  min-width: 920px;
+  min-width: 700px;
 }
 
 th,
@@ -291,10 +293,6 @@ ul {
 
 .inline input {
   flex: 1;
-}
-
-.inline > * {
-  min-width: 180px;
 }
 
 .inline button {

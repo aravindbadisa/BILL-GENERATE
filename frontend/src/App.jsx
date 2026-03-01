@@ -1770,165 +1770,163 @@ export default function App() {
 
           {activeTab === "payment" && (
             <>
-              <section className="card grid">
-                <div>
-                  <h2>Student & Receipt Lookup (Roll No)</h2>
-                  <div className="inline">
-                    <input
-                      value={receiptPin}
-                      onChange={(e) => setReceiptPin(e.target.value)}
-                      placeholder="Enter roll no / PIN"
-                    />
-                    <button type="button" className="secondary" onClick={clearSelectedStudent}>
-                      Clear
-                    </button>
+              <section className="card">
+                <h2>Student & Receipt Lookup (Roll No)</h2>
+                <div className="inline">
+                  <input
+                    value={receiptPin}
+                    onChange={(e) => setReceiptPin(e.target.value)}
+                    placeholder="Enter roll no / PIN"
+                  />
+                  <button type="button" className="secondary" onClick={clearSelectedStudent}>
+                    Clear
+                  </button>
+                </div>
+
+                {receiptLoading ? (
+                  <p className="hint" style={{ marginTop: 10 }}>
+                    Loading student...
+                  </p>
+                ) : receiptData ? (
+                  <div className="receipt" style={{ marginTop: 10 }}>
+                    <p><strong>College:</strong> {(receiptData.collegeKey || "default")} - {(receiptData.collegeName || "Unknown College")}</p>
+                    <p><strong>PIN:</strong> {receiptData.pin}</p>
+                    <p><strong>Name:</strong> {receiptData.name}</p>
+                    <p><strong>Course:</strong> {receiptData.course}</p>
+                    <p><strong>Phone:</strong> {receiptData.phone || "-"}</p>
+                    <p><strong>Receipt Key:</strong> {receiptData.receiptKey || "-"}</p>
+                    <p><strong>College Balance:</strong> {receiptData.collegeBalance}</p>
+                    <p><strong>Hostel Student:</strong> {receiptData.hasHostel ? "Yes" : "No"}</p>
+                    {showHostel ? (
+                      <p><strong>Hostel Balance:</strong> {receiptData.hostelBalance}</p>
+                    ) : (
+                      <p className="hint">This student is college-only (no hostel).</p>
+                    )}
+                    <p className="hint" style={{ marginTop: 6 }}>
+                      Generated: {receiptData.generatedOn ? new Date(receiptData.generatedOn).toLocaleString() : "-"}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="hint" style={{ marginTop: 10 }}>
+                    Search by roll no / PIN to view receipts.
+                  </p>
+                )}
+              </section>
+
+              <section className="card">
+                <h2>Payment (College + Hostel)</h2>
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    submitForm("/api/payments", combinedPaymentForm, () =>
+                      setCombinedPaymentForm((p) => ({ ...initialCombinedPayment, pin: receiptData?.pin || "" }))
+                    );
+                  }}
+                >
+                  <input name="pin" placeholder="PIN (select student first)" value={combinedPaymentForm.pin} readOnly />
+                  <input
+                    name="phone"
+                    placeholder="Phone (optional)"
+                    value={combinedPaymentForm.phone}
+                    onChange={handleInput(setCombinedPaymentForm)}
+                  />
+
+                  <div className="grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                    <div>
+                      <label className="hint" style={{ marginTop: 0 }}>College Amount Paid</label>
+                      <input
+                        name="collegeAmountPaid"
+                        type="number"
+                        min="0"
+                        placeholder="0"
+                        value={combinedPaymentForm.collegeAmountPaid}
+                        onChange={handleInput(setCombinedPaymentForm)}
+                      />
+                    </div>
+                    <div>
+                      <label className="hint" style={{ marginTop: 0 }}>Hostel Amount Paid</label>
+                      <input
+                        name="hostelAmountPaid"
+                        type="number"
+                        min="0"
+                        placeholder="0"
+                        value={combinedPaymentForm.hostelAmountPaid}
+                        onChange={handleInput(setCombinedPaymentForm)}
+                        disabled={!showHostel}
+                      />
+                    </div>
                   </div>
 
-                  {receiptLoading ? (
-                    <p className="hint" style={{ marginTop: 10 }}>
-                      Loading student...
-                    </p>
-                  ) : receiptData ? (
-                    <div className="receipt" style={{ marginTop: 10 }}>
-                      <p><strong>College:</strong> {(receiptData.collegeKey || "default")} - {(receiptData.collegeName || "Unknown College")}</p>
-                      <p><strong>PIN:</strong> {receiptData.pin}</p>
-                      <p><strong>Name:</strong> {receiptData.name}</p>
-                      <p><strong>Course:</strong> {receiptData.course}</p>
-                      <p><strong>Phone:</strong> {receiptData.phone || "-"}</p>
-                      <p><strong>Receipt Key:</strong> {receiptData.receiptKey || "-"}</p>
-                      <p><strong>College Balance:</strong> {receiptData.collegeBalance}</p>
-                      <p><strong>Hostel Student:</strong> {receiptData.hasHostel ? "Yes" : "No"}</p>
-                      {showHostel ? (
-                        <p><strong>Hostel Balance:</strong> {receiptData.hostelBalance}</p>
-                      ) : (
-                        <p className="hint">This student is college-only (no hostel).</p>
-                      )}
-                      <p className="hint" style={{ marginTop: 6 }}>
-                        Generated: {receiptData.generatedOn ? new Date(receiptData.generatedOn).toLocaleString() : "-"}
-                      </p>
+                  <div className="grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                    <div>
+                      <label className="hint" style={{ marginTop: 0 }}>Hostel Month</label>
+                      <select
+                        name="hostelMonthName"
+                        value={combinedPaymentForm.hostelMonthName}
+                        onChange={handleInput(setCombinedPaymentForm)}
+                        disabled={!showHostel}
+                      >
+                        <option value="">Select month</option>
+                        {HOSTEL_MONTHS.map((m) => (
+                          <option key={m} value={m}>{m}</option>
+                        ))}
+                      </select>
                     </div>
-                  ) : (
-                    <p className="hint" style={{ marginTop: 10 }}>
-                      Search by roll no / PIN to view receipts.
+                    <div>
+                      <label className="hint" style={{ marginTop: 0 }}>Hostel Year</label>
+                      <select
+                        name="hostelYear"
+                        value={combinedPaymentForm.hostelYear}
+                        onChange={handleInput(setCombinedPaymentForm)}
+                        disabled={!showHostel}
+                      >
+                        <option value="">Select year</option>
+                        {hostelYearOptions.map((y) => (
+                          <option key={y} value={y}>{y}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <button type="submit" disabled={!receiptData?.pin}>Save Payment & Generate Receipt</button>
+                  {!receiptData?.pin && <p className="hint">Select a student PIN above first.</p>}
+                  {!showHostel && (
+                    <p className="hint">
+                      Hostel fields are disabled because this student is not marked as a hostel student.
                     </p>
                   )}
-                </div>
 
-                <div>
-                  <h2>Payment (College + Hostel)</h2>
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      submitForm("/api/payments", combinedPaymentForm, () =>
-                        setCombinedPaymentForm((p) => ({ ...initialCombinedPayment, pin: receiptData?.pin || "" }))
-                      );
-                    }}
-                  >
-                    <input name="pin" placeholder="PIN (select student first)" value={combinedPaymentForm.pin} readOnly />
+                  <div className="inline" style={{ marginTop: 10 }}>
                     <input
-                      name="phone"
-                      placeholder="Phone (optional)"
-                      value={combinedPaymentForm.phone}
-                      onChange={handleInput(setCombinedPaymentForm)}
+                      value={receiptPhone}
+                      onChange={(e) => setReceiptPhone(e.target.value)}
+                      placeholder="WhatsApp phone (optional)"
                     />
-
-                    <div className="grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
-                      <div>
-                        <label className="hint" style={{ marginTop: 0 }}>College Amount Paid</label>
-                        <input
-                          name="collegeAmountPaid"
-                          type="number"
-                          min="0"
-                          placeholder="0"
-                          value={combinedPaymentForm.collegeAmountPaid}
-                          onChange={handleInput(setCombinedPaymentForm)}
-                        />
-                      </div>
-                      <div>
-                        <label className="hint" style={{ marginTop: 0 }}>Hostel Amount Paid</label>
-                        <input
-                          name="hostelAmountPaid"
-                          type="number"
-                          min="0"
-                          placeholder="0"
-                          value={combinedPaymentForm.hostelAmountPaid}
-                          onChange={handleInput(setCombinedPaymentForm)}
-                          disabled={!showHostel}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
-                      <div>
-                        <label className="hint" style={{ marginTop: 0 }}>Hostel Month</label>
-                        <select
-                          name="hostelMonthName"
-                          value={combinedPaymentForm.hostelMonthName}
-                          onChange={handleInput(setCombinedPaymentForm)}
-                          disabled={!showHostel}
-                        >
-                          <option value="">Select month</option>
-                          {HOSTEL_MONTHS.map((m) => (
-                            <option key={m} value={m}>{m}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="hint" style={{ marginTop: 0 }}>Hostel Year</label>
-                        <select
-                          name="hostelYear"
-                          value={combinedPaymentForm.hostelYear}
-                          onChange={handleInput(setCombinedPaymentForm)}
-                          disabled={!showHostel}
-                        >
-                          <option value="">Select year</option>
-                          {hostelYearOptions.map((y) => (
-                            <option key={y} value={y}>{y}</option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-
-                    <button type="submit" disabled={!receiptData?.pin}>Save Payment & Generate Receipt</button>
-                    {!receiptData?.pin && <p className="hint">Select a student PIN above first.</p>}
-                    {!showHostel && (
-                      <p className="hint">
-                        Hostel fields are disabled because this student is not marked as a hostel student.
-                      </p>
-                    )}
-
-                    <div className="inline" style={{ marginTop: 10 }}>
-                      <input
-                        value={receiptPhone}
-                        onChange={(e) => setReceiptPhone(e.target.value)}
-                        placeholder="WhatsApp phone (optional)"
-                      />
-                      <button type="button" className="secondary" onClick={() => downloadReceiptPdf("auto")} disabled={!receiptData?.pin}>
-                        Download PDF
-                      </button>
-                      <button type="button" className="secondary" onClick={downloadPaymentReceiptPdf} disabled={!lastPaymentReceipt?.receiptNo}>
-                        Payment Receipt PDF
-                      </button>
-                      {canWhatsApp && (
-                        <button type="button" onClick={openWhatsApp} disabled={!receiptData?.pin}>
-                          WhatsApp Message
-                        </button>
-                      )}
-                    </div>
-
-                    {lastPaymentReceipt?.receiptNo && (
-                      <p className="hint" style={{ marginTop: 8 }}>
-                        Latest Payment Receipt: <b>{lastPaymentReceipt.receiptNo}</b>
-                        {lastPaymentReceipt.receiptKey ? ` (Key: ${lastPaymentReceipt.receiptKey})` : ""}
-                      </p>
-                    )}
+                    <button type="button" className="secondary" onClick={() => downloadReceiptPdf("auto")} disabled={!receiptData?.pin}>
+                      Download PDF
+                    </button>
+                    <button type="button" className="secondary" onClick={downloadPaymentReceiptPdf} disabled={!lastPaymentReceipt?.receiptNo}>
+                      Payment Receipt PDF
+                    </button>
                     {canWhatsApp && (
-                      <p className="hint" style={{ marginTop: 6 }}>
-                        WhatsApp can’t auto-attach the PDF; download it and attach manually.
-                      </p>
+                      <button type="button" onClick={openWhatsApp} disabled={!receiptData?.pin}>
+                        WhatsApp Message
+                      </button>
                     )}
-                  </form>
-                </div>
+                  </div>
+
+                  {lastPaymentReceipt?.receiptNo && (
+                    <p className="hint" style={{ marginTop: 8 }}>
+                      Latest Payment Receipt: <b>{lastPaymentReceipt.receiptNo}</b>
+                      {lastPaymentReceipt.receiptKey ? ` (Key: ${lastPaymentReceipt.receiptKey})` : ""}
+                    </p>
+                  )}
+                  {canWhatsApp && (
+                    <p className="hint" style={{ marginTop: 6 }}>
+                      WhatsApp can’t auto-attach the PDF; download it and attach manually.
+                    </p>
+                  )}
+                </form>
               </section>
             </>
           )}
