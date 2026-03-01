@@ -627,13 +627,7 @@ app.get("/api/students", authRequired, anyRoleRequired(BILLING_ROLES), async (re
 });
 
 const deleteStudentData = async (collegeKey, pin) => {
-  await Promise.all([
-    Student.deleteOne({ ...collegeMatch(collegeKey), pin }),
-    CollegePayment.deleteMany({ ...collegeMatch(collegeKey), pin }),
-    HostelAttendance.deleteMany({ ...collegeMatch(collegeKey), pin }),
-    HostelPayment.deleteMany({ ...collegeMatch(collegeKey), pin }),
-    PaymentReceipt.deleteMany({ ...collegeMatch(collegeKey), pin })
-  ]);
+  await Student.deleteOne({ ...collegeMatch(collegeKey), pin });
 };
 
 app.delete("/api/students/:pin", authRequired, anyRoleRequired(["admin", "principal"]), async (req, res) => {
