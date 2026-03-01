@@ -345,6 +345,27 @@ export default function App() {
         Number(receiptData.hostelBalance || 0) > 0
     );
 
+  const [studentHostelFlag, setStudentHostelFlag] = useState(false);
+
+  useEffect(() => {
+    setStudentHostelFlag(Boolean(receiptData?.hasHostel));
+  }, [receiptData?.pin, receiptData?.hasHostel]);
+
+  const updateStudentHostelFlag = async () => {
+    setMessage("");
+    setError("");
+    try {
+      const pin = String(receiptData?.pin || "").trim();
+      if (!pin) throw new Error("Select a student PIN first");
+      await callApi(`/api/students/${encodeURIComponent(pin)}/hostel`, "PATCH", { hasHostel: studentHostelFlag });
+      setMessage("Updated hostel status.");
+      await loadReceiptForPin(pin);
+      await loadDashboard();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
   const getTotalBalance = (item) =>
     Number(item?.collegeBalance || 0) + Number(item?.hostelBalance || 0);
 
@@ -1383,8 +1404,7 @@ export default function App() {
           </div>
 
           {activeTab === "students" && (
-
-
+            <>
               {isPrincipal && (
                 <section className="card">
                   <h2>Principal: Submit Students (Excel/CSV)</h2>
@@ -1436,7 +1456,6 @@ export default function App() {
                   )}
                 </section>
               )}
-            <>
               <section className="card grid">
                 {isPrincipal && (
                   <div>
@@ -1798,6 +1817,21 @@ export default function App() {
                     <p><strong>Receipt Key:</strong> {receiptData.receiptKey || "-"}</p>
                     <p><strong>College Balance:</strong> {receiptData.collegeBalance}</p>
                     <p><strong>Hostel Student:</strong> {receiptData.hasHostel ? "Yes" : "No"}</p>
+                    {me?.role === "principal" && (
+                      <div className="inline" style={{ marginTop: 8 }}>
+                        <label className="inline" style={{ gap: 8 }}>
+                          <input
+                            type="checkbox"
+                            checked={studentHostelFlag}
+                            onChange={(e) => setStudentHostelFlag(e.target.checked)}
+                          />
+                          Change hostel status
+                        </label>
+                        <button type="button" className="secondary" onClick={updateStudentHostelFlag}>
+                          Update
+                        </button>
+                      </div>
+                    )}
                     {showHostel ? (
                       <p><strong>Hostel Balance:</strong> {receiptData.hostelBalance}</p>
                     ) : (

@@ -585,7 +585,7 @@ app.post("/api/students", authRequired, roleRequired("admin"), async (req, res) 
   }
 });
 
-app.patch("/api/students/:pin/hostel", authRequired, roleRequired("admin"), async (req, res) => {
+app.patch("/api/students/:pin/hostel", authRequired, anyRoleRequired(["admin", "principal"]), async (req, res) => {
   try {
     const pin = String(req.params.pin || "").trim();
     if (!pin) return res.status(400).json({ message: "pin is required" });
