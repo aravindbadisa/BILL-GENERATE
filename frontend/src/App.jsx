@@ -23,7 +23,9 @@ const initialCombinedPayment = {
 };
 
 const HOSTEL_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const initialHostelFee = { month: "", monthlyFee: "" };
+const nowDate = new Date();
+const defaultHostelMonth = `${HOSTEL_MONTHS[nowDate.getMonth()]}-${nowDate.getFullYear()}`;
+const initialHostelFee = { month: defaultHostelMonth, monthlyFee: "" };
 const initialAttendance = { pin: "", month: "", totalDays: "", daysStayed: "" };
 const initialHostelPayment = { pin: "", month: "", amountPaid: "", phone: "" };
 const initialLogin = { email: "", password: "" };
@@ -355,6 +357,10 @@ export default function App() {
     .sort((a, b) => b.totalBalance - a.totalBalance);
   const clearedBalance = balanceRows
     .filter((item) => item.totalBalance <= 0)
+    .sort((a, b) => String(a.pin || "").localeCompare(String(b.pin || "")));
+
+  const hostelStudents = students
+    .filter((s) => Boolean(s?.hasHostel))
     .sort((a, b) => String(a.pin || "").localeCompare(String(b.pin || "")));
 
 
@@ -1691,7 +1697,23 @@ export default function App() {
                           );
                         }}
                       >
-                        <input name="pin" placeholder="PIN" value={attendanceForm.pin} readOnly />
+                        <select
+                          name="pin"
+                          value={attendanceForm.pin}
+                          onChange={(e) => {
+                            const nextPin = e.target.value;
+                            setAttendanceForm((p) => ({ ...p, pin: nextPin }));
+                            if (nextPin) setReceiptPin(nextPin);
+                          }}
+                          required
+                        >
+                          <option value="">Select hostel student</option>
+                          {hostelStudents.map((s) => (
+                            <option key={s._id} value={s.pin}>
+                              {s.pin} - {s.name}
+                            </option>
+                          ))}
+                        </select>
                         <div className="grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
                           <div>
                             <label className="hint" style={{ marginTop: 0 }}>Month</label>
