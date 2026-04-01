@@ -9,6 +9,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const PDFDocument = require("pdfkit");
+const OpenAIImport = require("openai");
 const { signToken, authRequired, roleRequired, anyRoleRequired } = require("./auth");
 const collegeNames = require("./collegeNames.json");
 const User = require("./models/User");
@@ -24,6 +25,9 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const OpenAI = OpenAIImport?.default || OpenAIImport;
+const openai =
+  process.env.OPENAI_API_KEY && OpenAI ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
 
 const USER_ROLES = ["admin", "principal", "accountant", "staff"];
 const BILLING_ROLES = ["admin", "principal", "accountant", "staff"];
@@ -84,6 +88,7 @@ const isLocalDevOrigin = (origin) => {
   const value = String(origin || "");
   return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(value);
 };
+const isNullOrigin = (origin) => String(origin || "").toLowerCase() === "null";
 
 // Apply CORS to API routes only.
 // Important: browsers often send an Origin header even for same-origin module scripts/styles when served via tunnels.
@@ -101,6 +106,7 @@ app.use(
 
     const allow =
       !origin ||
+      isNullOrigin(origin) ||
       sameOrigin ||
       allowedOrigins.length === 0 ||
       allowedOrigins.includes(origin) ||
@@ -500,6 +506,56 @@ app.get("/api/health", (req, res) => {
     ok: true,
     dbConnected: mongoose.connection.readyState === 1
   });
+});
+
+app.post("/api/ai/analyze", async (req, res) => {
+  try {
+    if (!openai) {
+      return res.status(500).json({ message: "OPENAI_API_KEY is missing on the server." });
+    }
+
+    const textRaw = String(req.body?.text || "");
+    const questionRaw = String(req.body?.question || "").trim();
+    if (!textRaw.trim()) {
+      return res.status(400).json({ message: "text is required" });
+    }
+
+    const maxChars = 120000;
+    const text = textRaw.length > maxChars ? textRaw.slice(0, maxChars) : textRaw;
+    const question = questionRaw || "Summarize the content and list key items.";
+
+    const response = await openai.responses.create({
+      model: "gpt-5.2",
+      max_output_tokens: 800,
+      temperature: 0.2,
+      input: [
+        {
+          role: "system",
+          content: [
+            {
+              type: "input_text",
+              text:
+                "You are a precise assistant. Use only the provided content. If the content has OCR errors, say so briefly."
+            }
+          ]
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: `Question: ${question}\n\nContent:\n${text}`
+            }
+          ]
+        }
+      ]
+    });
+
+    const output = response.output_text || "";
+    res.json({ output, truncated: textRaw.length > maxChars });
+  } catch (error) {
+    res.status(500).json({ message: error.message || "AI failed" });
+  }
 });
 
 app.post("/api/auth/login", async (req, res) => {
